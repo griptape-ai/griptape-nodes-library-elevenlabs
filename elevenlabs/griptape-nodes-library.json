@@ -1,0 +1,42 @@
+{
+    "name": "ElevenLabs Nodes",
+    "library_schema_version": "0.1.0",
+    "metadata": {
+        "author": "Griptape",
+        "description": "Nodes integrating ElevenLabs APIs (voice design, conversion)",
+        "library_version": "0.1.0",
+        "engine_version": "0.41.0",
+        "tags": [
+            "Griptape",
+            "Audio",
+            "ElevenLabs"
+        ],
+        "dependencies": {
+            "pip_dependencies": [
+                "elevenlabs"
+            ],
+            "pip_install_flags": []
+        }
+    },
+    "categories": [
+        {
+            "ElevenLabs.Audio": {
+                "color": "border-amber-500",
+                "title": "ElevenLabs Audio",
+                "description": "ElevenLabs nodes for voice design and conversion",
+                "icon": "Volume2"
+            }
+        }
+    ],
+    "nodes": [
+        {
+            "class_name": "ElevenLabsDesignVoice",
+            "file_path": "voice_design.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Design a voice from a prompt and preview results.",
+                "display_name": "Design Voice"
+            }
+        }
+    ]
+}
