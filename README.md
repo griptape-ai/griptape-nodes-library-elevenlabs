@@ -1,25 +1,48 @@
-# Griptape Nodes: Node Library Template
+# Griptape Nodes: ElevenLabs Library
 
-Hi! Welcome to Griptape Nodes. 
-This is a guide to write your own nodes and node library, in order to use in our [Griptape Nodes](https://www.griptapenodes.com/) platform. 
+Voice tools for Griptape Nodes using the official ElevenLabs API/SDK.
 
-## Use this Template
-Create your own repository using this GitHub Template. Use the Template button in the top right. 
+### Requirements
+- ElevenLabs API key set in system config as `ELEVENLABS_API_KEY` (or environment)
+- Engine: recent Griptape Nodes release
+- Dependencies: declared in `elevenlabs/griptape-nodes-library.json` (includes `elevenlabs`)
 
-Once you've created your own repository from this template, you need to pull it down to your local machine, or the machine where you are running your Griptape Nodes Engine. 
+### Install / Register
+1) Clone this repo into your Griptape Nodes workspace
+2) In the Griptape Nodes app, add the absolute path to `elevenlabs/griptape-nodes-library.json` under Settings → Libraries to Register
+3) Refresh Libraries in the sidebar
 
-> **Hint**: It's recommended to clone this repository into your Griptape Nodes workspace directory. You can find your workspace directory by running:
-> ```bash
-> gtn config | grep workspace_directory
-> ```
-> Here's a quick way to navigate to your workspace directory:
-> ```bash
-> cd $(gtn config | grep workspace_directory | cut -d'"' -f4)
-> ```
-> Finally, clone the repository:
-> ```bash
-> git clone https://github.com/{{ .RepoName }}.git
-> ```
+### Nodes
+#### Design Voice
+Creates preview samples for a new voice from a descriptive prompt and returns playable audio plus structured metadata. Saves audio to static files for reliable playback.
+
+- Category: `ElevenLabs Audio`
+- Class: `ElevenLabsDesignVoice` (`elevenlabs/voice_design.py`)
+
+Inputs / Properties
+- `prompt` (str): 20–1000 chars voice description
+- `auto_generate_text` (bool, default True): generate preview text automatically
+- `preview_text` (str, hidden when auto_generate_text=True): 100–1000 chars
+- `output_format` (str): e.g. `mp3_44100_192`
+- `loudness` (float): -1..1
+- `seed` (int): deterministic seed
+- `guidance_scale` (float): 0..100
+- `quality` (float): -1..1
+- `reference_audio` (AudioArtifact | AudioUrlArtifact | str): optional bias (only for ttv_v3)
+
+Outputs
+- `preview_metadata` (json): `{ text, count, previews[] }` where each preview has `{ generated_voice_id, media_type, duration_secs, audio_url }`
+- `preview_audios` (list[AudioUrlArtifact]): playable audio list
+- `preview_audio_1` / `preview_audio_2` / `preview_audio_3` (AudioUrlArtifact): positional outputs for common UI wiring
+
+Notes
+- Non-blocking execution (`process` yields to `_run`)
+- API key resolved from system config `ELEVENLABS_API_KEY` or environment
+- Static file saving via `GriptapeNodes.StaticFilesManager()`; engine serves URLs
+- Logs under `griptape_nodes`
+
+### Roadmap
+- Voice Swap: convert voice in audio/video to a selected ElevenLabs voice, with optional remux for video
 
 ## Rename Directory
 

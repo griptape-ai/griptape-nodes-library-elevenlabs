@@ -37,6 +37,24 @@
                 "description": "Design a voice from a prompt and preview results.",
                 "display_name": "Design Voice"
             }
+        },
+        {
+            "class_name": "ElevenLabsSaveVoice",
+            "file_path": "save_voice.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Create and save a voice from a selected preview.",
+                "display_name": "Save Voice"
+            }
+        },
+        {
+            "class_name": "ElevenLabsListVoices",
+            "file_path": "list_voices.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "List account voices (10 per page) with IDs, names, and preview players.",
+                "display_name": "List Voices"
+            }
         }
     ]
 }

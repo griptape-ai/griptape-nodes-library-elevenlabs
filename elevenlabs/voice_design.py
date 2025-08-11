@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import os
 import logging
+import unicodedata
 from uuid import uuid4
 from typing import Any, Dict, List, Optional
 
@@ -21,7 +22,7 @@ class ElevenLabsDesignVoice(DataNode):
     """
 
     SERVICE_NAME: str = "ElevenLabs"
-    API_KEY_ENV_VAR: str = "ELEVENLABS_API_KEY"
+    API_KEY_ENV_VAR: str = "ELEVEN_LABS_API_KEY"
 
     # Use engine logger so messages appear in Griptape logs panel
     _logger = logging.getLogger("griptape_nodes")
@@ -182,8 +183,18 @@ class ElevenLabsDesignVoice(DataNode):
             )
         )
 
-        # Individual preview outputs (since API returns 3)
+        # Individual preview outputs (since API returns 3): Voice ID followed by Sample
         for i in range(1, 4):
+            self.add_parameter(
+                Parameter(
+                    name=f"voice_id_{i}",
+                    output_type="str",
+                    type="str",
+                    tooltip=f"Voice ID for preview #{i}",
+                    allowed_modes={ParameterMode.OUTPUT},
+                    ui_options={"display_name": f"Voice ID {i}", "hide_property": True},
+                )
+            )
             self.add_parameter(
                 Parameter(
                     name=f"preview_audio_{i}",
@@ -191,7 +202,7 @@ class ElevenLabsDesignVoice(DataNode):
                     type="AudioArtifact",
                     tooltip=f"Preview audio #{i}",
                     allowed_modes={ParameterMode.OUTPUT},
-                    ui_options={"expander": True},
+                    ui_options={"display_name": f"Sample {i}", "expander": True},
                 )
             )
 
@@ -217,10 +228,30 @@ class ElevenLabsDesignVoice(DataNode):
         return None
 
     def process(self) -> Any:
+        # Resolve API key before scheduling to avoid context issues
+        # Try primary key from system config
+        try:
+            self._resolved_api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
+        except Exception:
+            self._resolved_api_key = None  # type: ignore[attr-defined]
+        # Env fallbacks
+        if not getattr(self, "_resolved_api_key", None):  # type: ignore[attr-defined]
+            self._resolved_api_key = os.environ.get(self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
         # Non-blocking pattern: schedule _run
         yield lambda: self._run()
 
     def _run(self):
+        # Local helper: coerce text to ASCII-only to satisfy strict header encoders in some envs
+        def _to_ascii(s: Optional[str]) -> Optional[str]:
+            if s is None:
+                return None
+            try:
+                return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+            except Exception:
+                try:
+                    return s.encode("ascii", "ignore").decode("ascii")
+                except Exception:
+                    return s
         # Validate inputs
         # Use the 'prompt' parameter for voice_description
         description: Optional[str] = self.get_parameter_value("prompt")
@@ -264,18 +295,20 @@ class ElevenLabsDesignVoice(DataNode):
                 preview_text = preview_text[:1000]
 
         # Resolve API key from central config or environment (no service-specific lookups)
-        api_key: Optional[str] = None
-        try:
-            api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
-        except Exception:
-            api_key = None
+        # Prefer API key resolved in process()
+        api_key: Optional[str] = getattr(self, "_resolved_api_key", None)
+        if not api_key:
+            try:
+                api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
+            except Exception:
+                api_key = None
         if not api_key:
             api_key = os.environ.get(self.API_KEY_ENV_VAR)
 
         if not api_key:
             self.parameter_output_values["previews"] = []
             self.parameter_output_values["preview_audios"] = []
-            raise RuntimeError("Missing ELEVENLABS_API_KEY. Set it in system config or environment.")
+            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
 
         try:
             from elevenlabs import ElevenLabs  # Optional dep until library installs
@@ -286,10 +319,24 @@ class ElevenLabsDesignVoice(DataNode):
                 "elevenlabs package not installed. Add 'elevenlabs' to library dependencies."
             ) from e
 
-        client = ElevenLabs(api_key=api_key)
+        # Ensure API key is ASCII-only to avoid header encoding issues in some envs
+        api_key_ascii = (_to_ascii(api_key) if isinstance(api_key, str) else api_key)  # type: ignore[arg-type]
+        client = ElevenLabs(api_key=api_key_ascii)
+
+        # Sanitize strings to ASCII to avoid header encoding issues in some clients/envs
+        def _to_ascii(s: Optional[str]) -> Optional[str]:
+            if s is None:
+                return None
+            try:
+                return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+            except Exception:
+                return s.encode("ascii", "ignore").decode("ascii")
+
+        safe_description = _to_ascii(description) or description
+        safe_preview_text = _to_ascii(preview_text) if preview_text is not None else None
 
         payload: Dict[str, Any] = {
-            "voice_description": description,
+            "voice_description": safe_description,
             "model_id": model_id,
             "loudness": loudness,
             "seed": seed,
@@ -297,8 +344,8 @@ class ElevenLabsDesignVoice(DataNode):
             "quality": quality,
         }
         # API requires either text or auto_generate_text true; respect UI value
-        if preview_text is not None:
-            payload["text"] = preview_text
+        if safe_preview_text is not None:
+            payload["text"] = safe_preview_text
         elif auto_generate_text:
             payload["auto_generate_text"] = True
         else:
@@ -332,6 +379,35 @@ class ElevenLabsDesignVoice(DataNode):
         except TypeError:
             # Fall back if SDK version doesn't accept output_format in method signature
             response = client.text_to_voice.design(**payload)
+        except UnicodeEncodeError as e_hdr:
+            # Fallback to direct HTTP call with ASCII-safe headers
+            try:
+                import httpx  # type: ignore
+
+                base_url = "https://api.elevenlabs.io"
+                url = f"{base_url}/v1/text-to-voice/design"
+                headers = {
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                    "xi-api-key": str(api_key_ascii),
+                }
+                # Force ASCII-only headers
+                def _ascii_headers(h: Dict[str, Any]) -> Dict[str, str]:
+                    out: Dict[str, str] = {}
+                    for k, v in h.items():
+                        ks = _to_ascii(str(k)) or str(k)
+                        vs = _to_ascii(str(v)) or str(v)
+                        out[ks] = vs
+                    return out
+                headers = _ascii_headers(headers)
+                params = {"output_format": output_format}
+                with httpx.Client(timeout=30) as hc:
+                    r = hc.post(url, headers=headers, params=params, json=payload)
+                r.raise_for_status()
+                response = r.json()
+                self._logger.info("Used direct HTTP fallback for design due to header encoding issue: %s", e_hdr)
+            except Exception as e_http:
+                raise e_http
 
         previews = []
         preview_artifacts = []
@@ -455,6 +531,16 @@ class ElevenLabsDesignVoice(DataNode):
                 "audio_url": audio_url,
             }
             previews.append(preview_entry)
+
+            # Populate paired outputs: voice_id_N and preview_audio_N
+            id_slot = f"voice_id_{i + 1}"
+            audio_slot = f"preview_audio_{i + 1}"
+            self.parameter_output_values[id_slot] = gen_id
+            try:
+                if i < len(preview_artifacts):
+                    self.publish_update_to_parameter(audio_slot, preview_artifacts[i])
+            except Exception:
+                pass
 
         # JSON metadata for convenient Display JSON rendering
         self.parameter_output_values["preview_metadata"] = {
