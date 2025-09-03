@@ -42,12 +42,25 @@ class ElevenLabsListVoices(DataNode):
                 ui_options={
                     "display_name": "Page",
                     "className": "gt-select",
-                    # choices are populated at runtime via publish_update_to_parameter on a separate param (below)
+                    "data": {"choices": [["Page 1", 1]]},
                 },
             )
         )
 
-        # Outputs per slot
+        # Internal flag to control initial visibility
+        self.add_parameter(
+            Parameter(
+                name="loaded",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Internal flag to reveal results after first load.",
+                allowed_modes={ParameterMode.PROPERTY},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        # Outputs per slot (hidden until first successful run)
         for i in range(1, 11):
             self.add_parameter(
                 Parameter(
@@ -66,7 +79,7 @@ class ElevenLabsListVoices(DataNode):
                     type="str",
                     tooltip=f"Name #{i}",
                     allowed_modes={ParameterMode.PROPERTY},
-                    ui_options={"display_name": f"Name {i}"},
+                    ui_options={"display_name": f"Name {i}", "disabled": True, "hide_property": True},
                 )
             )
             self.add_parameter(
@@ -76,7 +89,7 @@ class ElevenLabsListVoices(DataNode):
                     type="AudioArtifact",
                     tooltip=f"Preview #{i}",
                     allowed_modes={ParameterMode.OUTPUT},
-                    ui_options={"display_name": f"Sample {i}", "expander": True, "pulse_on_run": True},
+                    ui_options={"display_name": f"Sample {i}", "expander": True, "pulse_on_run": True, "hide_property": True},
                 )
             )
 
@@ -91,6 +104,36 @@ class ElevenLabsListVoices(DataNode):
                 ui_options={"display_name": "Total Pages", "hide_property": True},
             )
         )
+
+        # Explicitly hide all per-slot params and total_pages so no ports/labels render until run
+        try:
+            for i in range(1, 11):
+                self.hide_parameter_by_name(f"voice_id_{i}")
+                self.hide_parameter_by_name(f"name_{i}")
+                self.hide_parameter_by_name(f"preview_{i}")
+            self.hide_parameter_by_name("total_pages")
+        except Exception:
+            pass
+
+    # Re-run when page changes; hide results while reloading
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # type: ignore[override]
+        try:
+            if parameter.name == "page":
+                # Hide outputs while the next run repopulates
+                try:
+                    self.publish_update_to_parameter("loaded", False)
+                except Exception:
+                    pass
+                # Clamp page to sane positive integer in case of manual edits
+                try:
+                    v = int(value)
+                    if v < 1:
+                        v = 1
+                        self.publish_update_to_parameter("page", v)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def process(self) -> Any:
         # Resolve and cache API key before scheduling background work
@@ -123,7 +166,6 @@ class ElevenLabsListVoices(DataNode):
         client = ElevenLabs(api_key=api_key)
 
         # Fetch up to 100 voices (no local cache persisted; every run pulls fresh)
-        # SDK snippet in docs: client.voices.search(include_total_count=True, page_size=..., ...)
         voices_resp = client.voices.search(include_total_count=True, page_size=self.FETCH_LIMIT)  # type: ignore[attr-defined]
 
         # Normalize result
@@ -146,12 +188,11 @@ class ElevenLabsListVoices(DataNode):
         end = start + self.PAGE_SIZE
         page_items = voices[start:end]
 
-        # Clear all slots first
+        # Clear then hide all slots before repopulating
         for i in range(1, 11):
             self.parameter_output_values[f"voice_id_{i}"] = None
             self.parameter_output_values[f"name_{i}"] = ""
             self.parameter_output_values[f"preview_{i}"] = None
-            # Hide slots by default; show when populated
             try:
                 self.hide_parameter_by_name(f"voice_id_{i}")
                 self.hide_parameter_by_name(f"name_{i}")
@@ -159,11 +200,10 @@ class ElevenLabsListVoices(DataNode):
             except Exception:
                 pass
 
-        # Populate current page
+        # Populate current page and reveal populated slots
         for idx, v in enumerate(page_items, start=1):
             if idx > 10:
                 break
-            # Extract fields
             vid = v.get("voice_id") if isinstance(v, dict) else getattr(v, "voice_id", None)
             name = v.get("name") if isinstance(v, dict) else getattr(v, "name", None)
             preview_url = v.get("preview_url") if isinstance(v, dict) else getattr(v, "preview_url", None)
@@ -175,16 +215,12 @@ class ElevenLabsListVoices(DataNode):
             self.parameter_output_values[id_param] = vid
             self.parameter_output_values[name_param] = name or ""
             try:
-                # Direct URL artifact (no caching)
                 from griptape.artifacts import AudioUrlArtifact  # type: ignore
-
                 if preview_url:
                     self.parameter_output_values[prev_param] = AudioUrlArtifact(value=str(preview_url))
             except Exception:
-                # If artifact class unavailable, leave None (UI may still show name/id)
                 self.parameter_output_values[prev_param] = None
 
-            # Show populated slots
             try:
                 self.show_parameter_by_name(id_param)
                 self.show_parameter_by_name(name_param)
@@ -192,7 +228,28 @@ class ElevenLabsListVoices(DataNode):
             except Exception:
                 pass
 
-        # Set total pages for UI, and normalize page dropdown choices by publishing
+        # Set total pages for UI and reveal it
         self.parameter_output_values["total_pages"] = total_pages
+        try:
+            self.show_parameter_by_name("total_pages")
+        except Exception:
+            pass
+
+        # Update the page dropdown choices to 1..total_pages
+        try:
+            choices = [[f"Page {i}", i] for i in range(1, total_pages + 1)]
+            self.publish_update_to_parameter("page", page)
+            try:
+                self.publish_update_to_parameter("page", {"__ui_options__": {"data": {"choices": choices}}})
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Mark loaded so UI shows the slots
+        try:
+            self.publish_update_to_parameter("loaded", True)
+        except Exception:
+            pass
 
 

@@ -55,6 +55,24 @@
                 "description": "List account voices (10 per page) with IDs, names, and preview players.",
                 "display_name": "List Voices"
             }
+        },
+        {
+            "class_name": "ElevenLabsSoundEffects",
+            "file_path": "sound_effects.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Generate a sound effect from text and return a playable URL.",
+                "display_name": "Sound Effects"
+            }
+        },
+        {
+            "class_name": "ElevenLabsGenerateMusic",
+            "file_path": "generate_music.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Generate music from a prompt and return a playable URL.",
+                "display_name": "Generate Music"
+            }
         }
     ]
 }
