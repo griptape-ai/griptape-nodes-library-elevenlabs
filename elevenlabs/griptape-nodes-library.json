@@ -73,6 +73,15 @@
                 "description": "Generate music from a prompt and return a playable URL.",
                 "display_name": "Generate Music"
             }
+        },
+        {
+            "class_name": "ElevenLabsVoiceChanger",
+            "file_path": "voice_changer.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Transform audio from one voice to another using Eleven Labs speech-to-speech API.",
+                "display_name": "Voice Changer"
+            }
         }
     ]
 }
