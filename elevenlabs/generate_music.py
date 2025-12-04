@@ -23,6 +23,7 @@ class ElevenLabsGenerateMusic(DataNode):
     Inputs:
     - prompt (str): Up to 2000 chars. Cannot be used with composition_plan in this node.
     - music_duration_seconds (float): Optional duration in seconds (10.0-300.0s). If not provided, API chooses length.
+    - force_instrumental (bool): If true, ensures the generated song is purely instrumental (no vocals).
     - output_format (str): codec_sample_rate_bitrate. Default mp3_44100_128.
     - model_id (str): Default music_v1.
 
@@ -79,6 +80,15 @@ class ElevenLabsGenerateMusic(DataNode):
                     "display_name": "Duration (seconds)",
                     "hide_when": {"use_specific_length": [False]},
                 },
+            )
+        )
+        self.add_parameter(
+            ParameterBool(
+                name="force_instrumental",
+                default_value=False,
+                tooltip="If true, ensures the generated song is purely instrumental (no vocals).",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Force Instrumental"},
             )
         )
         self.add_parameter(
@@ -150,6 +160,7 @@ class ElevenLabsGenerateMusic(DataNode):
         prompt: str | None = self.get_parameter_value("prompt")
         use_length: bool = bool(self.get_parameter_value("use_specific_length"))
         duration_seconds: float | None = self.get_parameter_value("music_duration_seconds")
+        force_instrumental: bool = bool(self.get_parameter_value("force_instrumental"))
         output_format: str = self.get_parameter_value("output_format") or "mp3_44100_128"
         model_id: str = self.get_parameter_value("model_id") or "music_v1"
 
@@ -175,6 +186,8 @@ class ElevenLabsGenerateMusic(DataNode):
             payload["prompt"] = prompt
         if music_length_ms is not None:
             payload["music_length_ms"] = music_length_ms
+        if force_instrumental:
+            payload["force_instrumental"] = True
         # Note: composition_plan not supported in this node; could be a future extension
 
         # HTTP request using httpx (same as working voice_changer node)
@@ -189,12 +202,13 @@ class ElevenLabsGenerateMusic(DataNode):
         if prompt and len(prompt) > self.PROMPT_TRUNCATE_LENGTH:
             prompt_for_log = prompt[: self.PROMPT_TRUNCATE_LENGTH] + "..."
         self._logger.info(
-            "GenerateMusic request: prompt=%s, prompt_len=%s, use_length=%s, duration_seconds=%s, music_length_ms=%s, output_format=%s, model_id=%s",
+            "GenerateMusic request: prompt=%s, prompt_len=%s, use_length=%s, duration_seconds=%s, music_length_ms=%s, force_instrumental=%s, output_format=%s, model_id=%s",
             prompt_for_log if prompt else None,
             len(prompt) if prompt else None,
             use_length,
             duration_seconds,
             music_length_ms,
+            force_instrumental,
             output_format,
             model_id,
         )
