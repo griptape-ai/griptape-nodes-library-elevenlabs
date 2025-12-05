@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import Any, Optional
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -77,9 +77,9 @@ class ElevenLabsListVoices(DataNode):
                     name=f"name_{i}",
                     input_types=["str"],
                     type="str",
-                    tooltip=f"Name #{i}",
+                    tooltip=f"Voice name for slot {i}",
                     allowed_modes={ParameterMode.PROPERTY},
-                    ui_options={"display_name": f"Name {i}", "disabled": True, "hide_property": True},
+                    ui_options={"display_name": f"Voice {i}", "disabled": True},
                 )
             )
             self.add_parameter(
@@ -89,7 +89,7 @@ class ElevenLabsListVoices(DataNode):
                     type="AudioArtifact",
                     tooltip=f"Preview #{i}",
                     allowed_modes={ParameterMode.OUTPUT},
-                    ui_options={"display_name": f"Sample {i}", "expander": True, "pulse_on_run": True, "hide_property": True},
+                    ui_options={"display_name": f"Sample {i}", "expander": True, "pulse_on_run": True, "height": "sm"},
                 )
             )
 
@@ -116,7 +116,7 @@ class ElevenLabsListVoices(DataNode):
             pass
 
     # Re-run when page changes; hide results while reloading
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # type: ignore[override]
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         try:
             if parameter.name == "page":
                 # Hide outputs while the next run repopulates
@@ -149,10 +149,10 @@ class ElevenLabsListVoices(DataNode):
     def _run(self) -> None:
         page: int = int(self.get_parameter_value("page") or 1)
 
-        api_key: Optional[str] = getattr(self, "_resolved_api_key", None)
+        api_key: str | None = getattr(self, "_resolved_api_key", None)
         if not api_key:
             try:
-                api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
+                api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
             except Exception:
                 api_key = os.environ.get(self.API_KEY_ENV_VAR)
         if not api_key:
@@ -176,7 +176,11 @@ class ElevenLabsListVoices(DataNode):
         elif isinstance(voices_resp, dict):
             data = voices_resp
         else:
-            data = {k: getattr(voices_resp, k) for k in dir(voices_resp) if not k.startswith("_") and not callable(getattr(voices_resp, k))}
+            data = {
+                k: getattr(voices_resp, k)
+                for k in dir(voices_resp)
+                if not k.startswith("_") and not callable(getattr(voices_resp, k))
+            }
 
         voices = data.get("voices") or []
         total = len(voices)
@@ -215,9 +219,12 @@ class ElevenLabsListVoices(DataNode):
             self.parameter_output_values[id_param] = vid
             self.parameter_output_values[name_param] = name or ""
             try:
-                from griptape.artifacts import AudioUrlArtifact  # type: ignore
+                from griptape.artifacts import AudioUrlArtifact  # type: ignore[import]
+
                 if preview_url:
                     self.parameter_output_values[prev_param] = AudioUrlArtifact(value=str(preview_url))
+                else:
+                    self.parameter_output_values[prev_param] = None
             except Exception:
                 self.parameter_output_values[prev_param] = None
 
@@ -251,5 +258,3 @@ class ElevenLabsListVoices(DataNode):
             self.publish_update_to_parameter("loaded", True)
         except Exception:
             pass
-
-
