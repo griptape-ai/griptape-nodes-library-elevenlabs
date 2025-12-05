@@ -387,7 +387,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Extract audio from video
             video_url = self._extract_url_from_artifact(audio_or_video)
             if not video_url:
-                raise ValueError(f"{self.name} could not extract URL from video input")
+                error_msg = f"{self.name} could not extract URL from video input"
+                raise ValueError(error_msg)
             audio_url = await self._extract_audio_from_video(video_url)
             return audio_url
 
@@ -412,9 +413,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
         try:
             import static_ffmpeg.run  # type: ignore[import-untyped]
         except ImportError:
-            raise ValueError(
-                f"{self.name} requires FFmpeg to extract audio from video. Please ensure FFmpeg is available."
-            ) from None
+            error_msg = f"{self.name} requires FFmpeg to extract audio from video. Please ensure FFmpeg is available."
+            raise ValueError(error_msg) from None
 
         # Get FFmpeg path (returns tuple of ffmpeg_path, ffprobe_path)
         try:
@@ -446,7 +446,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)  # noqa: S603
 
             if not temp_audio_path.exists() or temp_audio_path.stat().st_size == 0:
-                raise ValueError("FFmpeg did not create output file or file is empty")
+                error_msg = "FFmpeg did not create output file or file is empty"
+                raise ValueError(error_msg)
 
             # Read audio bytes and save to static storage
             with temp_audio_path.open("rb") as f:
@@ -491,7 +492,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
         if not voice_id:
-            raise ValueError(f"{self.name} requires a valid voice selection")
+            error_msg = f"{self.name} requires a valid voice selection"
+            raise ValueError(error_msg)
 
         model_id = self.get_parameter_value("model_id") or "eleven_multilingual_sts_v2"
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
@@ -636,8 +638,6 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
 
                 preview_url = voice_data.get("preview_url")
                 if preview_url:
-                    from griptape.artifacts import AudioUrlArtifact
-
                     preview_artifact = AudioUrlArtifact(value=str(preview_url))
                     self.set_parameter_value("voice_preview", preview_artifact, emit_change=True)
                     self.error_message.value = ""

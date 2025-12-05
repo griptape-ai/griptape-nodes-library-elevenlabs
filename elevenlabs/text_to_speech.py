@@ -502,8 +502,6 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
 
                 preview_url = voice_data.get("preview_url")
                 if preview_url:
-                    from griptape.artifacts import AudioUrlArtifact
-
                     preview_artifact = AudioUrlArtifact(value=str(preview_url))
                     self.set_parameter_value("voice_preview", preview_artifact, emit_change=True)
                     self.error_message.value = ""

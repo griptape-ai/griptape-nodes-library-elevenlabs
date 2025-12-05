@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import base64
-import os
 import logging
+import os
 import unicodedata
-from uuid import uuid4
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterMessage
+import httpx
+
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-"""
-Audio playback: we'll attempt to import dict_to_audio_url_artifact lazily in process()
-to avoid a hard dependency at import time.
-"""
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+# Note: dict_to_audio_url_artifact is imported lazily in _run() to avoid hard dependency
+# on griptape_nodes_library at import time
 
 
 class ElevenLabsDesignVoice(DataNode):
@@ -382,8 +386,6 @@ class ElevenLabsDesignVoice(DataNode):
         except UnicodeEncodeError as e_hdr:
             # Fallback to direct HTTP call with ASCII-safe headers
             try:
-                import httpx  # type: ignore
-
                 base_url = "https://api.elevenlabs.io"
                 url = f"{base_url}/v1/text-to-voice/design"
                 headers = {
@@ -491,9 +493,6 @@ class ElevenLabsDesignVoice(DataNode):
                     elif "mpeg" in mime or "mp3" in mime:
                         ext = "mp3"
                 try:
-                    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore
-                    from griptape.artifacts import AudioUrlArtifact  # type: ignore
-
                     audio_bytes = base64.b64decode(audio_b64)
                     file_stub = gen_id or f"preview_{i+1}_{uuid4().hex[:8]}"
                     filename = f"elevenlabs_{file_stub}.{ext}"
@@ -504,8 +503,6 @@ class ElevenLabsDesignVoice(DataNode):
                 except Exception as e_save:
                     # Fallbacks: data URL path
                     try:
-                        from griptape.artifacts import AudioUrlArtifact  # type: ignore
-
                         data_url = f"data:{mime};base64,{audio_b64}"
                         audio_artifact = AudioUrlArtifact(value=data_url)
                         preview_artifacts.append(audio_artifact)

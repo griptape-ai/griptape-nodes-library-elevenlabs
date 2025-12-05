@@ -5,6 +5,8 @@ import math
 import os
 from typing import Any
 
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
@@ -156,12 +158,14 @@ class ElevenLabsListVoices(DataNode):
             except Exception:
                 api_key = os.environ.get(self.API_KEY_ENV_VAR)
         if not api_key:
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+            error_msg = "Missing ELEVEN_LABS_API_KEY. Set it in system config or environment."
+            raise RuntimeError(error_msg)
 
         try:
             from elevenlabs import ElevenLabs  # type: ignore
         except Exception as e:
-            raise ImportError("elevenlabs package not installed. Add 'elevenlabs' to library dependencies.") from e
+            error_msg = "elevenlabs package not installed. Add 'elevenlabs' to library dependencies."
+            raise ImportError(error_msg) from e
 
         client = ElevenLabs(api_key=api_key)
 
@@ -218,14 +222,9 @@ class ElevenLabsListVoices(DataNode):
 
             self.parameter_output_values[id_param] = vid
             self.parameter_output_values[name_param] = name or ""
-            try:
-                from griptape.artifacts import AudioUrlArtifact  # type: ignore[import]
-
-                if preview_url:
-                    self.parameter_output_values[prev_param] = AudioUrlArtifact(value=str(preview_url))
-                else:
-                    self.parameter_output_values[prev_param] = None
-            except Exception:
+            if preview_url:
+                self.parameter_output_values[prev_param] = AudioUrlArtifact(value=str(preview_url))
+            else:
                 self.parameter_output_values[prev_param] = None
 
             try:

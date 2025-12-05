@@ -263,7 +263,8 @@ class ElevenLabsCloneVoice(DataNode):
             raise RuntimeError(error_message) from e
         except Exception as e:
             self._logger.error(f"CloneVoice failed: {e}")
-            raise RuntimeError(f"Failed to create voice clone: {e}") from e
+            error_msg = f"Failed to create voice clone: {e}"
+            raise RuntimeError(error_msg) from e
         finally:
             # Clean up temp files
             for temp_file in temp_files:
