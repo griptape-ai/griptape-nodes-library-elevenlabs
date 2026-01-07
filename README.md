@@ -74,6 +74,7 @@ Clone a voice from audio samples using Instant Voice Cloning:
 - Upload audio samples to create a new voice
 - Automatic voice preview after cloning
 - Returns the cloned voice ID for use in other nodes
+- For more information about voice cloning, view the [documentation](https://help.elevenlabs.io/hc/en-us/sections/23821115950481-Voice-Cloning)
 
 ### Design Voice
 
