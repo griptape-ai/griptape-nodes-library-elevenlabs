@@ -4,10 +4,13 @@ import base64
 import logging
 import os
 import time
-from typing import Any, Dict, Optional, Iterable
+from typing import Any, Dict, Iterable, Optional
+
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class ElevenLabsSoundEffects(DataNode):
@@ -318,15 +321,8 @@ class ElevenLabsSoundEffects(DataNode):
 
         # Save to static files when we have bytes; fallback to data URL otherwise
         audio_artifact = None
-        try:
-            from griptape.artifacts import AudioUrlArtifact  # type: ignore
-        except Exception:
-            AudioUrlArtifact = None  # type: ignore
-
-        if audio_bytes and AudioUrlArtifact is not None:
+        if audio_bytes:
             try:
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore
-
                 file_ext = self._sniff_audio_extension(audio_bytes)
                 file_name = f"elevenlabs_sfx_{int(time.time())}.{file_ext}"
                 self._logger.info(
@@ -366,7 +362,7 @@ class ElevenLabsSoundEffects(DataNode):
                 except Exception as e_data:
                     self._logger.info("SoundEffects data URL fallback failed: %s", e_data)
                     audio_artifact = None
-        elif AudioUrlArtifact is not None and isinstance(metadata.get("api"), dict):
+        elif isinstance(metadata.get("api"), dict):
             # Try to build from API metadata if it contains a URL or base64
             api_meta = metadata.get("api", {})
             audio_url = api_meta.get("url") or api_meta.get("audio_url")

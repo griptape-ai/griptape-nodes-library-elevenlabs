@@ -73,6 +73,33 @@
                 "description": "Generate music from a prompt and return a playable URL.",
                 "display_name": "Generate Music"
             }
+        },
+        {
+            "class_name": "ElevenLabsVoiceChanger",
+            "file_path": "voice_changer.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Transform audio from one voice to another using Eleven Labs speech-to-speech API.",
+                "display_name": "Voice Changer"
+            }
+        },
+        {
+            "class_name": "ElevenLabsCloneVoice",
+            "file_path": "clone_voice.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Clone a voice from audio samples using Instant Voice Cloning.",
+                "display_name": "Clone Voice"
+            }
+        },
+        {
+            "class_name": "ElevenLabsTextToSpeech",
+            "file_path": "text_to_speech.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Generate speech from text using ElevenLabs text-to-speech API (direct API).",
+                "display_name": "Text to Speech"
+            }
         }
     ]
 }

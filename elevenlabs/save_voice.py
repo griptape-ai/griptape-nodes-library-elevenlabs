@@ -5,8 +5,11 @@ import os
 from typing import Any, Dict, Optional
 from urllib.request import urlopen
 
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class ElevenLabsSaveVoice(DataNode):
@@ -194,17 +197,12 @@ class ElevenLabsSaveVoice(DataNode):
         preview_artifact = None
         if preview_url:
             try:
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore
-                from griptape.artifacts import AudioUrlArtifact  # type: ignore
-
                 data = urlopen(preview_url, timeout=15).read()
                 filename = f"elevenlabs_{voice_id or 'voice'}_preview.mp3"
                 static_url = GriptapeNodes.StaticFilesManager().save_static_file(data, filename)
                 preview_artifact = AudioUrlArtifact(value=static_url)
             except Exception:
                 try:
-                    from griptape.artifacts import AudioUrlArtifact  # type: ignore
-
                     preview_artifact = AudioUrlArtifact(value=preview_url)
                 except Exception:
                     preview_artifact = None
