@@ -315,6 +315,9 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
             self.hide_parameter_by_name("previous_text")
             self.hide_parameter_by_name("next_text")
 
+        # Fetch voice preview for the default voice on node creation
+        self._fetch_voice_preview()
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update parameter visibility and fetch voice preview based on voice preset selection."""
         if parameter.name == "voice_preset":

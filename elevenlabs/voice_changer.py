@@ -288,6 +288,9 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
+        # Fetch voice preview for the default voice on node creation
+        self._fetch_voice_preview()
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update parameter visibility based on voice preset selection and fetch preview."""
         if parameter.name == "voice_preset":
