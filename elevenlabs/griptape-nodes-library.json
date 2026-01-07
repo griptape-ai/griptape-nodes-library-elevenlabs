@@ -4,7 +4,7 @@
     "metadata": {
         "author": "Griptape",
         "description": "Nodes integrating ElevenLabs APIs (voice design, conversion)",
-        "library_version": "0.1.0",
+        "library_version": "0.2.0",
         "engine_version": "0.41.0",
         "tags": [
             "Griptape",
