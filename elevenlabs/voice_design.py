@@ -4,14 +4,12 @@ import base64
 import logging
 import os
 import unicodedata
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import httpx
-
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -99,7 +97,7 @@ class ElevenLabsDesignVoice(DataNode):
                             ["MP3 22.05kHz 32kbps", "mp3_22050_32"],
                             ["WAV/PCM 44.1kHz 16bit", "pcm_44100_16"],
                         ]
-                    }
+                    },
                 },
             )
         )
@@ -172,7 +170,7 @@ class ElevenLabsDesignVoice(DataNode):
                 type="dict",
                 tooltip="Preview metadata (JSON: text, previews, counts).",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"display_name": "Preview Metadata", "hide_property": True}
+                ui_options={"display_name": "Preview Metadata", "hide_property": True},
             )
         )
 
@@ -183,7 +181,7 @@ class ElevenLabsDesignVoice(DataNode):
                 type="list[AudioArtifact]",
                 tooltip="Playable audio previews.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"display_name": "Preview Audios","expander": True, "pulse_on_run": True},
+                ui_options={"display_name": "Preview Audios", "expander": True, "pulse_on_run": True},
             )
         )
 
@@ -210,7 +208,7 @@ class ElevenLabsDesignVoice(DataNode):
                 )
             )
 
-    def _get_reference_audio_b64(self, ref: Any) -> Optional[str]:
+    def _get_reference_audio_b64(self, ref: Any) -> str | None:
         if ref is None:
             return None
         # Accept data URLs directly
@@ -246,7 +244,7 @@ class ElevenLabsDesignVoice(DataNode):
 
     def _run(self):
         # Local helper: coerce text to ASCII-only to satisfy strict header encoders in some envs
-        def _to_ascii(s: Optional[str]) -> Optional[str]:
+        def _to_ascii(s: str | None) -> str | None:
             if s is None:
                 return None
             try:
@@ -256,9 +254,10 @@ class ElevenLabsDesignVoice(DataNode):
                     return s.encode("ascii", "ignore").decode("ascii")
                 except Exception:
                     return s
+
         # Validate inputs
         # Use the 'prompt' parameter for voice_description
-        description: Optional[str] = self.get_parameter_value("prompt")
+        description: str | None = self.get_parameter_value("prompt")
         if not description:
             self.parameter_output_values["previews"] = []
             self.parameter_output_values["preview_audios"] = []
@@ -278,13 +277,19 @@ class ElevenLabsDesignVoice(DataNode):
         # Fixed model; no user selection
         model_id: str = "eleven_multilingual_ttv_v2"
         # The prompt is the voice_description; preview_text is optional API text param
-        preview_text: Optional[str] = self.get_parameter_value("preview_text")
+        preview_text: str | None = self.get_parameter_value("preview_text")
         auto_generate_text: bool = bool(self.get_parameter_value("auto_generate_text"))
         output_format: str = self.get_parameter_value("output_format") or "mp3_44100_192"
-        loudness: float = float(self.get_parameter_value("loudness") if self.get_parameter_value("loudness") is not None else 0.5)
-        seed: Optional[int] = self.get_parameter_value("seed")
-        guidance_scale: float = float(self.get_parameter_value("guidance_scale") if self.get_parameter_value("guidance_scale") is not None else 5.0)
-        quality: Optional[float] = self.get_parameter_value("quality")
+        loudness: float = float(
+            self.get_parameter_value("loudness") if self.get_parameter_value("loudness") is not None else 0.5
+        )
+        seed: int | None = self.get_parameter_value("seed")
+        guidance_scale: float = float(
+            self.get_parameter_value("guidance_scale")
+            if self.get_parameter_value("guidance_scale") is not None
+            else 5.0
+        )
+        quality: float | None = self.get_parameter_value("quality")
         reference_audio = self.get_parameter_value("reference_audio")
 
         # Only include preview_text if valid; otherwise ignore
@@ -300,7 +305,7 @@ class ElevenLabsDesignVoice(DataNode):
 
         # Resolve API key from central config or environment (no service-specific lookups)
         # Prefer API key resolved in process()
-        api_key: Optional[str] = getattr(self, "_resolved_api_key", None)
+        api_key: str | None = getattr(self, "_resolved_api_key", None)
         if not api_key:
             try:
                 api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
@@ -319,16 +324,14 @@ class ElevenLabsDesignVoice(DataNode):
         except Exception as e:
             self.parameter_output_values["previews"] = []
             self.parameter_output_values["preview_audios"] = []
-            raise ImportError(
-                "elevenlabs package not installed. Add 'elevenlabs' to library dependencies."
-            ) from e
+            raise ImportError("elevenlabs package not installed. Add 'elevenlabs' to library dependencies.") from e
 
         # Ensure API key is ASCII-only to avoid header encoding issues in some envs
-        api_key_ascii = (_to_ascii(api_key) if isinstance(api_key, str) else api_key)  # type: ignore[arg-type]
+        api_key_ascii = _to_ascii(api_key) if isinstance(api_key, str) else api_key  # type: ignore[arg-type]
         client = ElevenLabs(api_key=api_key_ascii)
 
         # Sanitize strings to ASCII to avoid header encoding issues in some clients/envs
-        def _to_ascii(s: Optional[str]) -> Optional[str]:
+        def _to_ascii(s: str | None) -> str | None:
             if s is None:
                 return None
             try:
@@ -339,7 +342,7 @@ class ElevenLabsDesignVoice(DataNode):
         safe_description = _to_ascii(description) or description
         safe_preview_text = _to_ascii(preview_text) if preview_text is not None else None
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "voice_description": safe_description,
             "model_id": model_id,
             "loudness": loudness,
@@ -393,14 +396,16 @@ class ElevenLabsDesignVoice(DataNode):
                     "content-type": "application/json",
                     "xi-api-key": str(api_key_ascii),
                 }
+
                 # Force ASCII-only headers
-                def _ascii_headers(h: Dict[str, Any]) -> Dict[str, str]:
-                    out: Dict[str, str] = {}
+                def _ascii_headers(h: dict[str, Any]) -> dict[str, str]:
+                    out: dict[str, str] = {}
                     for k, v in h.items():
                         ks = _to_ascii(str(k)) or str(k)
                         vs = _to_ascii(str(v)) or str(v)
                         out[ks] = vs
                     return out
+
                 headers = _ascii_headers(headers)
                 params = {"output_format": output_format}
                 with httpx.Client(timeout=30) as hc:
@@ -420,7 +425,7 @@ class ElevenLabsDesignVoice(DataNode):
         #   "text": str
         # }
         # Normalize response
-        resp_dict: Dict[str, Any] = {}
+        resp_dict: dict[str, Any] = {}
         try:
             if isinstance(response, dict):
                 resp_dict = response
@@ -430,7 +435,11 @@ class ElevenLabsDesignVoice(DataNode):
                 resp_dict = response.to_dict()  # type: ignore[attr-defined]
             else:
                 # Best-effort: collect public attributes
-                resp_dict = {k: getattr(response, k) for k in dir(response) if not k.startswith("_") and not callable(getattr(response, k))}
+                resp_dict = {
+                    k: getattr(response, k)
+                    for k in dir(response)
+                    if not k.startswith("_") and not callable(getattr(response, k))
+                }
         except Exception:
             resp_dict = {}
 
@@ -453,16 +462,14 @@ class ElevenLabsDesignVoice(DataNode):
 
         for i, p in enumerate(previews_list or []):
             # Support both SDK object and dict
-            audio_b64 = (
-                (getattr(p, "audio_base_64", None) if not isinstance(p, dict) else p.get("audio_base_64"))
-                or (getattr(p, "audio_base64", None) if not isinstance(p, dict) else p.get("audio_base64"))
+            audio_b64 = (getattr(p, "audio_base_64", None) if not isinstance(p, dict) else p.get("audio_base_64")) or (
+                getattr(p, "audio_base64", None) if not isinstance(p, dict) else p.get("audio_base64")
             )
-            gen_id = (getattr(p, "generated_voice_id", None) if not isinstance(p, dict) else p.get("generated_voice_id"))
+            gen_id = getattr(p, "generated_voice_id", None) if not isinstance(p, dict) else p.get("generated_voice_id")
             media_type = (
-                (getattr(p, "media_type", None) if not isinstance(p, dict) else p.get("media_type"))
-                or "audio/mpeg"
-            )
-            duration = (getattr(p, "duration_secs", None) if not isinstance(p, dict) else p.get("duration_secs"))
+                getattr(p, "media_type", None) if not isinstance(p, dict) else p.get("media_type")
+            ) or "audio/mpeg"
+            duration = getattr(p, "duration_secs", None) if not isinstance(p, dict) else p.get("duration_secs")
 
             # Per-preview logging (truncated)
             try:
@@ -494,7 +501,7 @@ class ElevenLabsDesignVoice(DataNode):
                         ext = "mp3"
                 try:
                     audio_bytes = base64.b64decode(audio_b64)
-                    file_stub = gen_id or f"preview_{i+1}_{uuid4().hex[:8]}"
+                    file_stub = gen_id or f"preview_{i + 1}_{uuid4().hex[:8]}"
                     filename = f"elevenlabs_{file_stub}.{ext}"
                     static_url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename)
                     audio_artifact = AudioUrlArtifact(value=static_url)
@@ -511,7 +518,10 @@ class ElevenLabsDesignVoice(DataNode):
                     except Exception as e_art2:
                         # Last resort: try helper with 'url' key; else leave raw info
                         try:
-                            from griptape_nodes_library.utils.audio_utils import dict_to_audio_url_artifact  # type: ignore
+                            from griptape_nodes_library.utils.audio_utils import (
+                                dict_to_audio_url_artifact,  # type: ignore
+                            )
+
                             data_url = f"data:{mime};base64,{audio_b64}"
                             audio_dict = {"url": data_url}
                             audio_artifact = dict_to_audio_url_artifact(audio_dict)
@@ -555,6 +565,3 @@ class ElevenLabsDesignVoice(DataNode):
         except Exception:
             pass
         # done
-
-
-

@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.request import urlopen
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -120,10 +119,10 @@ class ElevenLabsSaveVoice(DataNode):
 
     def _run(self) -> None:
         # Collect inputs
-        gen_id: Optional[str] = self.get_parameter_value("generated_voice_id")
-        voice_name: Optional[str] = self.get_parameter_value("voice_name")
-        voice_description: Optional[str] = self.get_parameter_value("voice_description")
-        labels: Optional[Dict[str, str]] = self.get_parameter_value("labels")
+        gen_id: str | None = self.get_parameter_value("generated_voice_id")
+        voice_name: str | None = self.get_parameter_value("voice_name")
+        voice_description: str | None = self.get_parameter_value("voice_description")
+        labels: dict[str, str] | None = self.get_parameter_value("labels")
 
         # Basic validation
         if not gen_id:
@@ -134,7 +133,7 @@ class ElevenLabsSaveVoice(DataNode):
             raise ValueError("voice_description must be between 20 and 1000 characters.")
 
         # Resolve API key
-        api_key: Optional[str] = getattr(self, "_resolved_api_key", None)
+        api_key: str | None = getattr(self, "_resolved_api_key", None)
         if not api_key:
             try:
                 api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
@@ -169,7 +168,7 @@ class ElevenLabsSaveVoice(DataNode):
         )
 
         # Normalize response to dict
-        voice_dict: Dict[str, Any]
+        voice_dict: dict[str, Any]
         if isinstance(response, dict):
             voice_dict = response
         elif hasattr(response, "model_dump"):
@@ -177,7 +176,11 @@ class ElevenLabsSaveVoice(DataNode):
         elif hasattr(response, "to_dict"):
             voice_dict = response.to_dict()  # type: ignore[attr-defined]
         else:
-            voice_dict = {k: getattr(response, k) for k in dir(response) if not k.startswith("_") and not callable(getattr(response, k))}
+            voice_dict = {
+                k: getattr(response, k)
+                for k in dir(response)
+                if not k.startswith("_") and not callable(getattr(response, k))
+            }
 
         voice_id = voice_dict.get("voice_id")
         preview_url = voice_dict.get("preview_url")
@@ -208,5 +211,3 @@ class ElevenLabsSaveVoice(DataNode):
                     preview_artifact = None
 
         self.parameter_output_values["preview_audio"] = preview_artifact
-
-

@@ -4,10 +4,10 @@ import base64
 import logging
 import os
 import time
-from typing import Any, Dict, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -134,7 +134,7 @@ class ElevenLabsSoundEffects(DataNode):
             pass
         return "mp3"
 
-    def _join_iterable_bytes(self, it: Iterable[Any]) -> Optional[bytes]:
+    def _join_iterable_bytes(self, it: Iterable[Any]) -> bytes | None:
         chunks = []
         total = 0
         try:
@@ -159,21 +159,21 @@ class ElevenLabsSoundEffects(DataNode):
             return None
 
     def _run(self) -> None:
-        text: Optional[str] = self.get_parameter_value("text")
+        text: str | None = self.get_parameter_value("text")
         if not text or not isinstance(text, str) or len(text.strip()) == 0:
             raise ValueError("text is required to generate a sound effect.")
 
         # Optional params
         use_duration: bool = bool(self.get_parameter_value("use_specific_duration"))
-        duration_val: Optional[float] = self.get_parameter_value("duration_seconds")
+        duration_val: float | None = self.get_parameter_value("duration_seconds")
         try:
-            duration: Optional[float] = float(duration_val) if (use_duration and duration_val is not None) else None
+            duration: float | None = float(duration_val) if (use_duration and duration_val is not None) else None
         except Exception:
             duration = None
         looping: bool = bool(self.get_parameter_value("looping"))
 
         # Resolve API key
-        api_key: Optional[str] = getattr(self, "_resolved_api_key", None)
+        api_key: str | None = getattr(self, "_resolved_api_key", None)
         if not api_key:
             try:
                 api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
@@ -194,13 +194,16 @@ class ElevenLabsSoundEffects(DataNode):
         # Call the Text-to-Sound-Effects API
         self._logger.info(
             "SoundEffects request: text_len=%s, use_duration=%s, duration=%s, looping=%s",
-            len(text), use_duration, duration, looping,
+            len(text),
+            use_duration,
+            duration,
+            looping,
         )
         if not use_duration:
             self._logger.info("SoundEffects will NOT include duration (lower credit cost).")
 
         # Build kwargs dynamically to avoid passing None
-        kwargs: Dict[str, Any] = {"text": text}
+        kwargs: dict[str, Any] = {"text": text}
         if use_duration and duration is not None:
             # Clamp to API range for safety
             if duration < 0.1:
@@ -234,7 +237,7 @@ class ElevenLabsSoundEffects(DataNode):
 
         # Response is often audio bytes; add robust normalization and logging.
         # Seed metadata with request info so UI always sees something useful
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "request": {
                 "text_len": len(text),
                 "use_specific_duration": use_duration,
@@ -242,10 +245,10 @@ class ElevenLabsSoundEffects(DataNode):
                 "looping": looping,
             }
         }
-        audio_bytes: Optional[bytes] = None
-        file_url: Optional[str] = None
-        file_name: Optional[str] = None
-        file_ext: Optional[str] = None
+        audio_bytes: bytes | None = None
+        file_url: str | None = None
+        file_name: str | None = None
+        file_ext: str | None = None
 
         try:
             self._logger.info("SoundEffects response type: %s", type(response).__name__)
@@ -325,9 +328,7 @@ class ElevenLabsSoundEffects(DataNode):
             try:
                 file_ext = self._sniff_audio_extension(audio_bytes)
                 file_name = f"elevenlabs_sfx_{int(time.time())}.{file_ext}"
-                self._logger.info(
-                    "Saving sound effect to static storage: %s (bytes=%s)", file_name, len(audio_bytes)
-                )
+                self._logger.info("Saving sound effect to static storage: %s (bytes=%s)", file_name, len(audio_bytes))
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 file_url = static_files_manager.save_static_file(audio_bytes, file_name)
                 audio_artifact = AudioUrlArtifact(value=file_url, name=file_name)  # type: ignore
