@@ -3,14 +3,13 @@ from __future__ import annotations
 import base64
 import logging
 import os
-import time
 from collections.abc import Iterable
 from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 
 
 class ElevenLabsSoundEffects(DataNode):
@@ -86,6 +85,9 @@ class ElevenLabsSoundEffects(DataNode):
                 allowed_modes={ParameterMode.PROPERTY},
             )
         )
+
+        self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="elevenlabs_sfx.mp3")
+        self._output_file.add_parameter()
 
         # Outputs
         self.add_parameter(
@@ -327,10 +329,12 @@ class ElevenLabsSoundEffects(DataNode):
         if audio_bytes:
             try:
                 file_ext = self._sniff_audio_extension(audio_bytes)
-                file_name = f"elevenlabs_sfx_{int(time.time())}.{file_ext}"
-                self._logger.info("Saving sound effect to static storage: %s (bytes=%s)", file_name, len(audio_bytes))
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                file_url = static_files_manager.save_static_file(audio_bytes, file_name)
+                self._logger.info("Saving sound effect to project storage (bytes=%s)", len(audio_bytes))
+                saved = self._output_file.build_file(default_filename=f"elevenlabs_sfx.{file_ext}").write_bytes(
+                    audio_bytes
+                )
+                file_url = saved.location
+                file_name = saved.location
                 audio_artifact = AudioUrlArtifact(value=file_url, name=file_name)  # type: ignore
                 try:
                     self.publish_update_to_parameter("audio", audio_artifact)

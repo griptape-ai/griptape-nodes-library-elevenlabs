@@ -4,7 +4,6 @@ import json as _json
 import logging
 import subprocess
 import tempfile
-import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,7 @@ import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -267,6 +267,11 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                 ui_options={"display_name": "Output Format"},
             )
         )
+        self._output_file = ProjectFileParameter(
+            node=self, name="output_file", default_filename="eleven_voice_changer.mp3"
+        )
+        self._output_file.add_parameter()
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -455,12 +460,10 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             with temp_audio_path.open("rb") as f:
                 audio_bytes = f.read()
 
-            # Save to static storage and return URL
-            filename = f"extracted_audio_{int(time.time())}.mp3"
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            audio_url = static_files_manager.save_static_file(audio_bytes, filename)
+            # Save to project file storage and return URL
+            saved = self._output_file.build_file(default_filename="extracted_audio.mp3").write_bytes(audio_bytes)
 
-            return audio_url
+            return saved.location
 
         except subprocess.CalledProcessError as e:
             error_msg = f"FFmpeg failed to extract audio: {e.stderr}"
@@ -761,14 +764,11 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             raise
 
     def _save_audio_from_bytes(self, audio_bytes: bytes) -> None:
-        """Save audio bytes to static storage."""
+        """Save audio bytes to project file storage."""
         try:
-            filename = f"eleven_voice_changer_{int(time.time())}.mp3"
-
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(audio_bytes, filename)
-            self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved_url, name=filename)
-            self._log(f"Saved transformed audio to static storage as {filename}")
+            saved = self._output_file.build_file(default_filename="eleven_voice_changer.mp3").write_bytes(audio_bytes)
+            self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved.location, name=saved.location)
+            self._log(f"Saved transformed audio to project storage as {saved.location}")
         except Exception as e:
             self._log(f"Failed to save audio from bytes: {e}")
             self.parameter_output_values["audio_url"] = None

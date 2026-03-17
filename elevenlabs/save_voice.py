@@ -8,7 +8,7 @@ from urllib.request import urlopen
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 
 
 class ElevenLabsSaveVoice(DataNode):
@@ -74,6 +74,11 @@ class ElevenLabsSaveVoice(DataNode):
                 allowed_modes={ParameterMode.PROPERTY},
             )
         )
+
+        self._output_file = ProjectFileParameter(
+            node=self, name="output_file", default_filename="elevenlabs_voice_preview.mp3"
+        )
+        self._output_file.add_parameter()
 
         # Outputs
         self.add_parameter(
@@ -196,14 +201,15 @@ class ElevenLabsSaveVoice(DataNode):
         self.parameter_output_values["voice"] = voice_dict
         self.parameter_output_values["voice_id"] = voice_id
 
-        # Attempt to save preview to static files for reliable playback
+        # Attempt to save preview to project file storage for reliable playback
         preview_artifact = None
         if preview_url:
             try:
                 data = urlopen(preview_url, timeout=15).read()
-                filename = f"elevenlabs_{voice_id or 'voice'}_preview.mp3"
-                static_url = GriptapeNodes.StaticFilesManager().save_static_file(data, filename)
-                preview_artifact = AudioUrlArtifact(value=static_url)
+                saved = self._output_file.build_file(
+                    default_filename=f"elevenlabs_{voice_id or 'voice'}_preview.mp3"
+                ).write_bytes(data)
+                preview_artifact = AudioUrlArtifact(value=saved.location)
             except Exception:
                 try:
                     preview_artifact = AudioUrlArtifact(value=preview_url)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import time
 from typing import Any
 from urllib.parse import urljoin
 
@@ -10,6 +9,7 @@ import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -274,6 +274,9 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 allow_output=False,
             )
         self.add_node_element(voice_settings_group)
+
+        self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="eleven_tts.mp3")
+        self._output_file.add_parameter()
 
         # OUTPUTS
         self.add_parameter(
@@ -678,12 +681,9 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
         """Handle audio response from ElevenLabs API."""
         try:
             self._log("Processing audio bytes from API response")
-            filename = f"eleven_tts_{int(time.time())}.mp3"
-
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(response_bytes, filename)
-            self.parameter_output_values["audio"] = AudioUrlArtifact(value=saved_url, name=filename)
-            self._log(f"Saved audio to static storage as {filename}")
+            saved = self._output_file.build_file(default_filename="eleven_tts.mp3").write_bytes(response_bytes)
+            self.parameter_output_values["audio"] = AudioUrlArtifact(value=saved.location, name=saved.location)
+            self._log(f"Saved audio to project storage as {saved.location}")
 
             # Note: Direct API doesn't provide alignment data in the same format as proxy
             # Set to None for now
