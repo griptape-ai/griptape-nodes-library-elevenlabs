@@ -12,7 +12,6 @@ from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
@@ -446,7 +445,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             ]
 
             # Run FFmpeg
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)  # noqa: S603
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)  # noqa: S603
 
             if not temp_audio_path.exists() or temp_audio_path.stat().st_size == 0:
                 error_msg = "FFmpeg did not create output file or file is empty"
