@@ -11,7 +11,7 @@ import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 
 # Note: dict_to_audio_url_artifact is imported lazily in _run() to avoid hard dependency
 # on griptape_nodes_library at import time
@@ -161,6 +161,11 @@ class ElevenLabsDesignVoice(DataNode):
         )
 
         # No explicit status parameter; keep UI minimal
+
+        self._output_file = ProjectFileParameter(
+            node=self, name="output_file", default_filename="elevenlabs_preview.mp3"
+        )
+        self._output_file.add_parameter()
 
         # Outputs
         self.add_parameter(
@@ -502,11 +507,12 @@ class ElevenLabsDesignVoice(DataNode):
                 try:
                     audio_bytes = base64.b64decode(audio_b64)
                     file_stub = gen_id or f"preview_{i + 1}_{uuid4().hex[:8]}"
-                    filename = f"elevenlabs_{file_stub}.{ext}"
-                    static_url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename)
-                    audio_artifact = AudioUrlArtifact(value=static_url)
+                    saved = self._output_file.build_file(default_filename=f"elevenlabs_{file_stub}.{ext}").write_bytes(
+                        audio_bytes
+                    )
+                    audio_artifact = AudioUrlArtifact(value=saved.location)
                     preview_artifacts.append(audio_artifact)
-                    audio_url = static_url
+                    audio_url = saved.location
                 except Exception as e_save:
                     # Fallbacks: data URL path
                     try:

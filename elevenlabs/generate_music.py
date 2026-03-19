@@ -3,13 +3,13 @@ from __future__ import annotations
 import base64
 import json as _json
 import logging
-import time
 from typing import Any
 
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -140,6 +140,9 @@ class ElevenLabsGenerateMusic(DataNode):
             )
         )
 
+        self._output_file = ProjectFileParameter(node=self, name="output_file", default_filename="elevenlabs_music.mp3")
+        self._output_file.add_parameter()
+
         # Outputs
         self.add_parameter(
             Parameter(
@@ -227,7 +230,7 @@ class ElevenLabsGenerateMusic(DataNode):
             error_msg = f"Request failed: {e_http}"
             raise RuntimeError(error_msg) from e_http
 
-        # Save to static
+        # Save to project file
         audio_artifact = None
         if resp_bytes:
             try:
@@ -238,9 +241,8 @@ class ElevenLabsGenerateMusic(DataNode):
                         ext = "wav"
                     elif output_format.startswith("mp3"):
                         ext = "mp3"
-                filename = f"elevenlabs_music_{int(time.time())}.{ext}"
-                static_url = GriptapeNodes.StaticFilesManager().save_static_file(resp_bytes, filename)
-                audio_artifact = AudioUrlArtifact(value=static_url, name=filename)
+                saved = self._output_file.build_file(default_filename=f"elevenlabs_music.{ext}").write_bytes(resp_bytes)
+                audio_artifact = AudioUrlArtifact(value=saved.location, name=saved.location)
             except Exception as e_save:
                 try:
                     b64 = base64.b64encode(resp_bytes).decode("ascii")
