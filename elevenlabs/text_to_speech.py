@@ -157,14 +157,14 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                     "display_name": "Custom Voice ID",
                     "hide": True,
                     "placeholder_text": "e.g., 21m00Tcm4TlvDq8ikWAM",
-                    "traits": [
-                        Button(
-                            size="icon",
-                            icon="audio-lines",
-                            tooltip="Search for a voice",
-                            button_link="https://elevenlabs.io/app/voice-library",
-                        )
-                    ],
+                },
+                traits={
+                    Button(
+                        size="icon",
+                        icon="audio-lines",
+                        tooltip="Search for a voice",
+                        button_link="https://elevenlabs.io/app/voice-library",
+                    )
                 },
             )
         )
