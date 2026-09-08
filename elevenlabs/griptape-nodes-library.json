@@ -12,9 +12,7 @@
             "ElevenLabs"
         ],
         "dependencies": {
-            "pip_dependencies": [
-                "elevenlabs"
-            ],
+            "pip_dependencies": [],
             "pip_install_flags": []
         }
     },
