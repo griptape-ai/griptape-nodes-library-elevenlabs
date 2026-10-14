@@ -6,8 +6,9 @@ import os
 from collections.abc import Iterable
 from typing import Any
 
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 
@@ -140,19 +141,24 @@ class ElevenLabsSoundEffects(DataNode):
         chunks = []
         total = 0
         try:
-            for idx, part in enumerate(it):
-                if isinstance(part, (bytes, bytearray)):
-                    chunks.append(bytes(part))
-                    total += len(part)
-                    if idx % 10 == 0:
-                        try:
-                            self._logger.info("SoundEffects streaming: received %s bytes so far", total)
-                        except Exception:
-                            pass
-                else:
-                    # Non-byte chunk; ignore
-                    continue
+            # The SDK sends the request when iteration starts, so ElevenLabs errors surface here.
+            with provider_errors():
+                for idx, part in enumerate(it):
+                    if isinstance(part, (bytes, bytearray)):
+                        chunks.append(bytes(part))
+                        total += len(part)
+                        if idx % 10 == 0:
+                            try:
+                                self._logger.info("SoundEffects streaming: received %s bytes so far", total)
+                            except Exception:
+                                pass
+                    else:
+                        # Non-byte chunk; ignore
+                        continue
             return b"".join(chunks) if chunks else None
+        except NodeError:
+            # ElevenLabs errors must reach the editor, not fall through to the handler below.
+            raise
         except Exception as e:
             try:
                 self._logger.info("SoundEffects iterable join failed: %s", e)
@@ -163,7 +169,7 @@ class ElevenLabsSoundEffects(DataNode):
     def _run(self) -> None:
         text: str | None = self.get_parameter_value("text")
         if not text or not isinstance(text, str) or len(text.strip()) == 0:
-            raise ValueError("text is required to generate a sound effect.")
+            raise parameter_error("'Text' is empty. Describe the sound effect and run the node again.", "text")
 
         # Optional params
         use_duration: bool = bool(self.get_parameter_value("use_specific_duration"))
@@ -184,7 +190,7 @@ class ElevenLabsSoundEffects(DataNode):
         if not api_key:
             api_key = os.environ.get(self.API_KEY_ENV_VAR)
         if not api_key:
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+            raise missing_api_key_error()
 
         try:
             from elevenlabs import ElevenLabs  # type: ignore
@@ -218,24 +224,25 @@ class ElevenLabsSoundEffects(DataNode):
             kwargs["loop"] = True
 
         # Try with best-known signature, then fallbacks
-        try:
-            response = client.text_to_sound_effects.convert(**kwargs)
-        except TypeError as e1:
-            self._logger.info("SoundEffects convert signature mismatch (v1): %s; trying fallbacks…", e1)
-            # Try alternate names
-            alt_kwargs = {"text": text}
-            if use_duration and duration is not None:
-                alt_kwargs["duration"] = duration
-            if looping:
-                alt_kwargs["looping"] = True
+        with provider_errors():
             try:
-                response = client.text_to_sound_effects.convert(**alt_kwargs)
-            except TypeError as e2:
-                self._logger.info("SoundEffects convert signature mismatch (v2): %s; trying minimal…", e2)
-                response = client.text_to_sound_effects.convert(text=text)
-        except Exception as e_call:
-            self._logger.info("SoundEffects API call failed: %s", e_call)
-            raise
+                response = client.text_to_sound_effects.convert(**kwargs)
+            except TypeError as e1:
+                self._logger.info("SoundEffects convert signature mismatch (v1): %s; trying fallbacks…", e1)
+                # Try alternate names
+                alt_kwargs = {"text": text}
+                if use_duration and duration is not None:
+                    alt_kwargs["duration"] = duration
+                if looping:
+                    alt_kwargs["looping"] = True
+                try:
+                    response = client.text_to_sound_effects.convert(**alt_kwargs)
+                except TypeError as e2:
+                    self._logger.info("SoundEffects convert signature mismatch (v2): %s; trying minimal…", e2)
+                    response = client.text_to_sound_effects.convert(text=text)
+            except Exception as e_call:
+                self._logger.info("SoundEffects API call failed: %s", e_call)
+                raise
 
         # Response is often audio bytes; add robust normalization and logging.
         # Seed metadata with request info so UI always sees something useful

@@ -5,6 +5,7 @@ import math
 import os
 from typing import Any
 
+from elevenlabs_node_errors import missing_api_key_error, provider_errors
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -157,8 +158,7 @@ class ElevenLabsListVoices(DataNode):
             except Exception:
                 api_key = os.environ.get(self.API_KEY_ENV_VAR)
         if not api_key:
-            error_msg = "Missing ELEVEN_LABS_API_KEY. Set it in system config or environment."
-            raise RuntimeError(error_msg)
+            raise missing_api_key_error()
 
         try:
             from elevenlabs import ElevenLabs  # type: ignore
@@ -169,7 +169,8 @@ class ElevenLabsListVoices(DataNode):
         client = ElevenLabs(api_key=api_key)
 
         # Fetch up to 100 voices (no local cache persisted; every run pulls fresh)
-        voices_resp = client.voices.search(include_total_count=True, page_size=self.FETCH_LIMIT)  # type: ignore[attr-defined]
+        with provider_errors():
+            voices_resp = client.voices.search(include_total_count=True, page_size=self.FETCH_LIMIT)  # type: ignore[attr-defined]
 
         # Normalize result
         if hasattr(voices_resp, "model_dump"):

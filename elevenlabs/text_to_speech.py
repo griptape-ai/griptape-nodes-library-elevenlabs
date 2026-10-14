@@ -6,8 +6,15 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import (
+    NodeError,
+    Parameter,
+    ParameterGroup,
+    ParameterMessage,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
@@ -353,13 +360,11 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
 
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
         if not api_key:
-            errors.append(
-                ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
-            )
+            errors.append(missing_api_key_error())
 
         text = self.get_parameter_value("text")
         if not text or not text.strip():
-            errors.append(ValueError(f"{self.name}: Text input is required."))
+            errors.append(parameter_error("'Text' is empty. Enter the text to speak and run the node again.", "text"))
 
         return errors or None
 
@@ -378,33 +383,21 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
 
         try:
             params = self._get_parameters()
-        except Exception as e:
-            self._set_safe_defaults()
-            error_message = str(e)
-            self._set_status_results(was_successful=False, result_details=error_message)
-            self._handle_failure_exception(e)
-            return
+            api_key = self._get_api_key()
+            voice_id = self._get_voice_id()
 
-        api_key = self._get_api_key()
-        voice_id = self._get_voice_id()
+            if not voice_id:
+                msg = "No voice is selected. Choose one in 'Voice', or enter an ID in 'Custom Voice ID', and run the node again."
+                raise parameter_error(msg, "voice_preset")
 
-        if not voice_id:
-            error_msg = f"{self.name}: Voice ID is required. Please select a voice preset or enter a custom voice ID."
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
-            return
+            self._log(f"Generating speech with voice {voice_id} via ElevenLabs API")
 
-        self._log(f"Generating speech with voice {voice_id} via ElevenLabs API")
-
-        try:
             response_bytes = await self._submit_request(voice_id, params, api_key)
-            if response_bytes:
-                self._handle_response(response_bytes)
-                self._set_status_results(was_successful=True, result_details="Speech generated successfully")
-            else:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="No audio data received from API")
+            if not response_bytes:
+                msg = "ElevenLabs returned no audio. Run the node again."
+                raise NodeError(msg)
+            self._handle_response(response_bytes)
+            self._set_status_results(was_successful=True, result_details="Speech generated successfully")
         except Exception as e:
             self._set_safe_defaults()
             error_message = str(e)
@@ -588,8 +581,8 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 case "Robust":
                     voice_settings["stability"] = 1.0
                 case _:
-                    msg = f"{self.name} received invalid stability value: {stability_str}. Must be one of: Creative, Natural, or Robust"
-                    raise ValueError(msg)
+                    msg = f"'Stability' must be Creative, Natural, or Robust. It's set to {stability_str!r}."
+                    raise parameter_error(msg, "stability")
 
         if speed is not None:
             voice_settings["speed"] = speed
@@ -603,8 +596,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
         """Get the API key - validation is done in validate_before_node_run()."""
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
         if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
-            raise RuntimeError(msg)
+            raise missing_api_key_error()
         return api_key
 
     async def _submit_request(self, voice_id: str, params: dict[str, Any], api_key: str) -> bytes | None:
@@ -620,48 +612,13 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
         self._log(f"Submitting request to ElevenLabs API: {url}")
         self._log_request(params)
 
-        try:
+        with provider_errors():
             async with httpx.AsyncClient(timeout=300.0) as client:
                 response = await client.post(url, json=params, headers=headers)
                 response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"Request failed: {e}"
-            raise RuntimeError(msg) from e
 
         self._log("Request submitted successfully")
         return response.content
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "detail" in error_data:
-                detail = error_data["detail"]
-                if isinstance(detail, dict):
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-                    if status and message:
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-                elif isinstance(detail, str):
-                    return f"Error: {detail}"
-
-            if "error" in error_data:
-                error_msg = error_data["error"]
-                if isinstance(error_msg, str):
-                    return f"Error: {error_msg}"
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except Exception:
-            return f"API Error ({status_code}): Unable to parse error response"
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         """Log request payload with truncated text for readability."""

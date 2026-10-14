@@ -5,6 +5,7 @@ import os
 from typing import Any
 from urllib.request import urlopen
 
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -131,11 +132,19 @@ class ElevenLabsSaveVoice(DataNode):
 
         # Basic validation
         if not gen_id:
-            raise ValueError("generated_voice_id is required.")
+            raise parameter_error(
+                "'Generated Voice ID' is empty. Connect a voice ID from Design Voice and run the node again.",
+                "generated_voice_id",
+            )
         if not voice_name:
-            raise ValueError("voice_name is required.")
+            raise parameter_error(
+                "'Voice Name' is empty. Enter a name for the voice and run the node again.", "voice_name"
+            )
         if not voice_description or len(voice_description) < 20 or len(voice_description) > 1000:
-            raise ValueError("voice_description must be between 20 and 1000 characters.")
+            length = len(voice_description) if voice_description else 0
+            raise parameter_error(
+                f"'Voice Description' must be between 20 and 1000 characters. It has {length}.", "voice_description"
+            )
 
         # Resolve API key
         api_key: str | None = getattr(self, "_resolved_api_key", None)
@@ -147,7 +156,7 @@ class ElevenLabsSaveVoice(DataNode):
         if not api_key:
             api_key = os.environ.get(self.API_KEY_ENV_VAR)
         if not api_key:
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+            raise missing_api_key_error()
 
         # Call API
         try:
@@ -165,12 +174,13 @@ class ElevenLabsSaveVoice(DataNode):
             bool(labels),
         )
 
-        response = client.text_to_voice.create(
-            voice_name=voice_name,
-            voice_description=voice_description,
-            generated_voice_id=gen_id,
-            labels=labels,
-        )
+        with provider_errors():
+            response = client.text_to_voice.create(
+                voice_name=voice_name,
+                voice_description=voice_description,
+                generated_voice_id=gen_id,
+                labels=labels,
+            )
 
         # Normalize response to dict
         voice_dict: dict[str, Any]

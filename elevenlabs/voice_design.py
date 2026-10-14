@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -266,7 +267,7 @@ class ElevenLabsDesignVoice(DataNode):
         if not description:
             self.parameter_output_values["previews"] = []
             self.parameter_output_values["preview_audios"] = []
-            raise ValueError("voice_description is required.")
+            raise parameter_error("'Prompt' is empty. Describe the voice and run the node again.", "prompt")
 
         # Enforce API min/max length with smart coercion
         if len(description) < 20:
@@ -322,7 +323,7 @@ class ElevenLabsDesignVoice(DataNode):
         if not api_key:
             self.parameter_output_values["previews"] = []
             self.parameter_output_values["preview_audios"] = []
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+            raise missing_api_key_error()
 
         try:
             from elevenlabs import ElevenLabs  # Optional dep until library installs
@@ -361,7 +362,10 @@ class ElevenLabsDesignVoice(DataNode):
         elif auto_generate_text:
             payload["auto_generate_text"] = True
         else:
-            raise ValueError("Provide 'preview_text' (>=100 chars) or enable 'auto_generate_text'.")
+            raise parameter_error(
+                "'Preview Text' needs at least 100 characters. Enter more text, or turn on 'Auto Generate Text'.",
+                "preview_text",
+            )
         # no-op; handled above
 
         # Only supported on ttv_v3
@@ -385,15 +389,15 @@ class ElevenLabsDesignVoice(DataNode):
         except Exception:
             pass
 
-        try:
-            # Some SDKs accept output_format as arg; if not, the client may ignore it gracefully.
-            response = client.text_to_voice.design(output_format=output_format, **payload)
-        except TypeError:
-            # Fall back if SDK version doesn't accept output_format in method signature
-            response = client.text_to_voice.design(**payload)
-        except UnicodeEncodeError as e_hdr:
-            # Fallback to direct HTTP call with ASCII-safe headers
+        with provider_errors():
             try:
+                # Some SDKs accept output_format as arg; if not, the client may ignore it gracefully.
+                response = client.text_to_voice.design(output_format=output_format, **payload)
+            except TypeError:
+                # Fall back if SDK version doesn't accept output_format in method signature
+                response = client.text_to_voice.design(**payload)
+            except UnicodeEncodeError as e_hdr:
+                # Fallback to direct HTTP call with ASCII-safe headers
                 base_url = "https://api.elevenlabs.io"
                 url = f"{base_url}/v1/text-to-voice/design"
                 headers = {
@@ -418,8 +422,6 @@ class ElevenLabsDesignVoice(DataNode):
                 r.raise_for_status()
                 response = r.json()
                 self._logger.info("Used direct HTTP fallback for design due to header encoding issue: %s", e_hdr)
-            except Exception as e_http:
-                raise e_http
 
         previews = []
         preview_artifacts = []
