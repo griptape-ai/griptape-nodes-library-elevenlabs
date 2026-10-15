@@ -328,11 +328,11 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate that required configuration is available before running the node."""
-        errors = []
+        # Without a key nothing can run, so it is the only problem reported.
+        if not GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME):
+            return [missing_api_key_error()]
 
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            errors.append(missing_api_key_error())
+        errors = []
 
         audio_or_video = self.get_parameter_value("audio_or_video")
         if not audio_or_video:

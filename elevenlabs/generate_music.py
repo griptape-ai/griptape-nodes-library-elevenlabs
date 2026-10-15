@@ -155,6 +155,12 @@ class ElevenLabsGenerateMusic(DataNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing API key on its own, since nothing can run without it."""
+        if GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME):
+            return None
+        return [missing_api_key_error()]
+
     def process(self) -> Any:
         yield lambda: self._run()
 

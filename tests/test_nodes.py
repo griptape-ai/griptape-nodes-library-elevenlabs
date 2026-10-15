@@ -110,21 +110,18 @@ def patched_engine():
         engine.stop()
 
 
-def test_tts_validation_reports_each_problem_without_the_node_name(patched_engine) -> None:
+def test_tts_validation_names_the_empty_text_without_the_node_name(patched_engine) -> None:
     module, node = _node("text_to_speech", "ElevenLabsTextToSpeech")
     node.set_parameter_value("text", "  ")
-    patched_engine(module, None)
+    patched_engine(module, "key")
 
     errors = node.validate_before_node_run()
 
     assert errors is not None
-    assert all(isinstance(error, NodeError) for error in errors)
-    assert all("Some Node" not in str(error) for error in errors)
-    assert len(errors) == 2
-    key_error, text_error = errors
-    assert key_error.links[0].url == KEY_SECRET_LINK
-    assert str(text_error) == "'Text' is empty. Enter the text to speak and run the node again."
-    assert text_error.fields == {"parameter": "text"}
+    assert len(errors) == 1
+    assert isinstance(errors[0], NodeError)
+    assert str(errors[0]) == "'Text' is empty. Enter the text to speak and run the node again."
+    assert errors[0].fields == {"parameter": "text"}
 
 
 def test_tts_a_refused_key_raises_with_status_request_id_response_and_links(monkeypatch, patched_engine) -> None:
@@ -226,17 +223,38 @@ def _voice_changer(patched_engine, *, audio: Any = "https://example.com/in.mp3")
     return module, node
 
 
-def test_voice_changer_validation_reports_each_problem_without_the_node_name(patched_engine) -> None:
+def test_voice_changer_validation_names_the_missing_input_without_the_node_name(patched_engine) -> None:
     module, node = _node("voice_changer", "ElevenLabsVoiceChanger")
-    patched_engine(module, None)
+    patched_engine(module, "key")
 
     errors = node.validate_before_node_run()
 
     assert errors is not None
-    assert all(isinstance(error, NodeError) for error in errors)
-    assert all("Some Node" not in str(error) for error in errors)
+    assert len(errors) == 1
+    assert isinstance(errors[0], NodeError)
+    assert str(errors[0]) == "'Audio or Video' has no input. Connect an audio or video file and run the node again."
+
+
+@pytest.mark.parametrize("module_name", NODE_FILES)
+def test_a_missing_key_is_the_only_problem_reported_and_links_to_the_secret(
+    module_name: str, key_absent, patched_engine
+) -> None:
+    module = importlib.import_module(module_name)
+    node_class = next(
+        value for name, value in vars(module).items() if name.startswith("ElevenLabs") and isinstance(value, type)
+    )
+    node = node_class(name="Some Node")
+    if hasattr(module, "GriptapeNodes"):
+        patched_engine(module, None)
+
+    errors = node.validate_before_node_run()
+
+    assert errors is not None
+    assert len(errors) == 1
+    assert isinstance(errors[0], NodeError)
+    assert str(errors[0]).startswith("ELEVEN_LABS_API_KEY is not set.")
+    assert "Some Node" not in str(errors[0])
     assert errors[0].links[0].url == KEY_SECRET_LINK
-    assert str(errors[1]) == "'Audio or Video' has no input. Connect an audio or video file and run the node again."
 
 
 def test_voice_changer_a_validation_list_from_the_api_is_read_from_detail(monkeypatch, patched_engine) -> None:

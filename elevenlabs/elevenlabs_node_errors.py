@@ -10,6 +10,7 @@ ElevenLabs reports an error under a top-level ``detail`` key. ``detail`` is a st
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
@@ -46,6 +47,15 @@ def missing_api_key_error() -> NodeError:
             NodeErrorLink(label="Get an ElevenLabs API key", url=API_KEY_PAGE_URL),
         ],
     )
+
+
+def resolve_api_key(node: Any) -> str | None:
+    """The API key from the node's config, then from the environment."""
+    try:
+        key = node.get_config_value(value=API_KEY_NAME)
+    except Exception:
+        key = None
+    return key or os.environ.get(API_KEY_NAME)
 
 
 def parameter_error(message: str, parameter: str) -> NodeError:

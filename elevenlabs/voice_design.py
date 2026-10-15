@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors, resolve_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -234,6 +234,12 @@ class ElevenLabsDesignVoice(DataNode):
             if isinstance(uri, str) and uri.startswith("data:audio") and "," in uri:
                 return uri.split(",", 1)[1]
         return None
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing API key on its own, since nothing can run without it."""
+        if resolve_api_key(self):
+            return None
+        return [missing_api_key_error()]
 
     def process(self) -> Any:
         # Resolve API key before scheduling to avoid context issues

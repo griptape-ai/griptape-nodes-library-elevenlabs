@@ -6,7 +6,7 @@ import os
 from collections.abc import Iterable
 from typing import Any
 
-from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors, resolve_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -111,6 +111,12 @@ class ElevenLabsSoundEffects(DataNode):
                 ui_options={"display_name": "Metadata", "hide_property": True},
             )
         )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing API key on its own, since nothing can run without it."""
+        if resolve_api_key(self):
+            return None
+        return [missing_api_key_error()]
 
     def process(self) -> Any:
         # Resolve API key before scheduling work
