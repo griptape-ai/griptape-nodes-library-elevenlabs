@@ -10,8 +10,15 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import (
+    NodeError,
+    Parameter,
+    ParameterGroup,
+    ParameterMessage,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
@@ -321,17 +328,16 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate that required configuration is available before running the node."""
-        errors = []
+        # Without a key nothing can run, so it is the only problem reported.
+        if not GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME):
+            return [missing_api_key_error()]
 
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            errors.append(
-                ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
-            )
+        errors = []
 
         audio_or_video = self.get_parameter_value("audio_or_video")
         if not audio_or_video:
-            errors.append(ValueError(f"{self.name} requires an audio or video input."))
+            msg = "'Audio or Video' has no input. Connect an audio or video file and run the node again."
+            errors.append(parameter_error(msg, "audio_or_video"))
 
         return errors or None
 
@@ -353,9 +359,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Get and prepare audio input
             audio_url = await self._prepare_audio_input()
             if not audio_url:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="Failed to prepare audio input")
-                return
+                msg = "Could not read the file connected to 'Audio or Video'. Connect an audio or video file and run the node again."
+                raise parameter_error(msg, "audio_or_video")
 
             # Get parameters
             params = self._get_parameters()
@@ -367,14 +372,11 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Submit request
             response_bytes = await self._submit_request(voice_id, audio_bytes, params)
 
-            if response_bytes:
-                self._handle_response(response_bytes)
-                self._set_status_results(
-                    was_successful=True, result_details="Voice transformation completed successfully"
-                )
-            else:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="No audio data received from API")
+            if not response_bytes:
+                msg = "ElevenLabs returned no audio. Run the node again."
+                raise NodeError(msg)
+            self._handle_response(response_bytes)
+            self._set_status_results(was_successful=True, result_details="Voice transformation completed successfully")
 
         except Exception as e:
             self._set_safe_defaults()
@@ -394,8 +396,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Extract audio from video
             video_url = self._extract_url_from_artifact(audio_or_video)
             if not video_url:
-                error_msg = f"{self.name} could not extract URL from video input"
-                raise ValueError(error_msg)
+                msg = "Could not read the video connected to 'Audio or Video'. Connect a video file and run the node again."
+                raise parameter_error(msg, "audio_or_video")
             audio_url = await self._extract_audio_from_video(video_url)
             return audio_url
 
@@ -420,15 +422,16 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
         try:
             import static_ffmpeg.run  # type: ignore[import-untyped]
         except ImportError:
-            error_msg = f"{self.name} requires FFmpeg to extract audio from video. Please ensure FFmpeg is available."
-            raise ValueError(error_msg) from None
+            msg = "Extracting audio from a video needs FFmpeg, which is not available. Connect an audio file instead, or install FFmpeg."
+            raise NodeError(msg) from None
 
         # Get FFmpeg path (returns tuple of ffmpeg_path, ffprobe_path)
         try:
             ffmpeg_path, _ = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
         except Exception as e:
-            error_msg = f"FFmpeg not found. Please ensure static-ffmpeg is properly installed. Error: {e!s}"
-            raise ValueError(error_msg) from e
+            self._log(f"FFmpeg lookup failed: {e}")
+            msg = "FFmpeg is not available. Reinstall the 'static-ffmpeg' package, or connect an audio file instead."
+            raise NodeError(msg) from e
 
         # Create temporary output file
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
@@ -453,8 +456,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)  # noqa: S603
 
             if not temp_audio_path.exists() or temp_audio_path.stat().st_size == 0:
-                error_msg = "FFmpeg did not create output file or file is empty"
-                raise ValueError(error_msg)
+                msg = "FFmpeg produced no audio from the video connected to 'Audio or Video'. Check that the video has an audio track."
+                raise parameter_error(msg, "audio_or_video")
 
             # Read audio bytes and save to static storage
             with temp_audio_path.open("rb") as f:
@@ -466,11 +469,10 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             return saved.location
 
         except subprocess.CalledProcessError as e:
-            error_msg = f"FFmpeg failed to extract audio: {e.stderr}"
-            raise ValueError(error_msg) from e
-        except Exception as e:
-            error_msg = f"Failed to extract audio from video: {e}"
-            raise ValueError(error_msg) from e
+            msg = "FFmpeg could not extract audio from the video connected to 'Audio or Video'. Check that the video has an audio track."
+            raise NodeError(
+                msg, fields={"parameter": "audio_or_video"}, response={"ffmpeg_stderr": (e.stderr or "")[-2000:]}
+            ) from e
         finally:
             # Clean up temp file
             if temp_audio_path.exists():
@@ -483,9 +485,13 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                 response = await client.get(audio_url)
                 response.raise_for_status()
                 return response.content
-        except Exception as e:
-            error_msg = f"Failed to download audio from {audio_url}: {e}"
-            raise ValueError(error_msg) from e
+        except httpx.HTTPError as e:
+            self._log(f"Failed to download audio from {audio_url}: {e}")
+            reason = (
+                f"HTTP {e.response.status_code}" if isinstance(e, httpx.HTTPStatusError) else str(e) or type(e).__name__
+            )
+            msg = f"Could not download the file connected to 'Audio or Video' ({reason}). Check that the file is still available and run the node again."
+            raise parameter_error(msg, "audio_or_video") from e
 
     def _get_parameters(self) -> dict[str, Any]:
         """Get parameters for the API request."""
@@ -497,8 +503,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
         if not voice_id:
-            error_msg = f"{self.name} requires a valid voice selection"
-            raise ValueError(error_msg)
+            msg = "No voice is selected. Choose one in 'Voice', or enter an ID in 'Custom Voice ID', and run the node again."
+            raise parameter_error(msg, "voice_preset")
 
         model_id = self.get_parameter_value("model_id") or "eleven_multilingual_sts_v2"
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
@@ -531,8 +537,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                 case "Robust":
                     voice_settings["stability"] = 1.0
                 case _:
-                    msg = f"{self.name} received invalid stability value: {stability_str}. Must be one of: Creative, Natural, or Robust"
-                    raise ValueError(msg)
+                    msg = f"'Stability' must be Creative, Natural, or Robust. It's set to {stability_str!r}."
+                    raise parameter_error(msg, "stability")
 
         if similarity_boost is not None:
             voice_settings["similarity_boost"] = similarity_boost
@@ -546,8 +552,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
         """Get the API key - validation is done in validate_before_node_run()."""
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
         if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
-            raise RuntimeError(msg)
+            raise missing_api_key_error()
         return api_key
 
     def _get_voice_id(self) -> str | None:
@@ -708,7 +713,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
 
         self._log(f"Submitting request to ElevenLabs speech-to-speech API with voice: {voice_id}")
 
-        try:
+        with provider_errors():
             async with httpx.AsyncClient(timeout=300.0) as client:
                 response = await client.post(
                     url,
@@ -718,41 +723,9 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                     headers=headers,
                 )
                 response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"Request failed: {e}"
-            raise RuntimeError(msg) from e
 
         self._log("Request submitted successfully")
         return response.content
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information for the user."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "detail" in error_data:
-                detail = error_data["detail"]
-                if isinstance(detail, dict):
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-
-                    if status and message:
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-
-            if "error" in error_data:
-                return f"Error: {error_data['error']}"
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except (_json.JSONDecodeError, KeyError, TypeError):
-            return f"API Error ({status_code}): Unable to parse error response"
 
     def _handle_response(self, response_bytes: bytes) -> None:
         """Handle audio response from API (raw audio bytes)."""

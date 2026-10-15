@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from elevenlabs_node_errors import missing_api_key_error, parameter_error, provider_errors
 from griptape.artifacts.audio_artifact import AudioArtifact
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterList, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -169,6 +170,12 @@ class ElevenLabsCloneVoice(DataNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Report a missing API key on its own, since nothing can run without it."""
+        if GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME):
+            return None
+        return [missing_api_key_error()]
+
     def process(self) -> Any:
         yield lambda: self._run()
 
@@ -180,21 +187,20 @@ class ElevenLabsCloneVoice(DataNode):
         labels: str | None = self.get_parameter_value("labels")
 
         if not audio_input:
-            error_msg = f"{self.name}: Audio input is required for voice cloning."
-            raise ValueError(error_msg)
+            msg = "'Audio Sample(s)' has no input. Connect at least one audio sample and run the node again."
+            raise parameter_error(msg, "audio")
 
         # Get API key
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
         if not api_key:
-            error_msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise RuntimeError(error_msg)
+            raise missing_api_key_error()
 
         # ParameterList returns a list directly, but we need to handle it properly
         # Normalize audio input to list of artifacts
         audio_list = self._normalize_audio_input(audio_input)
         if not audio_list:
-            error_msg = f"{self.name}: No valid audio files found in input."
-            raise ValueError(error_msg)
+            msg = "None of the files connected to 'Audio Sample(s)' could be read as audio. Connect audio files and run the node again."
+            raise parameter_error(msg, "audio")
 
         self._logger.info(
             f"CloneVoice: Creating voice clone '{voice_name}' from {len(audio_list)} audio file(s), "
@@ -216,8 +222,8 @@ class ElevenLabsCloneVoice(DataNode):
                         temp_files.append(Path(file_obj.name))
 
             if not files:
-                error_msg = f"{self.name}: Failed to prepare audio files for upload."
-                raise ValueError(error_msg)
+                msg = "Could not prepare any file connected to 'Audio Sample(s)' for upload. Check that the files are still available and run the node again."
+                raise parameter_error(msg, "audio")
 
             # Make API request - use correct endpoint from API docs
             base_url = "https://api.elevenlabs.io"
@@ -237,15 +243,15 @@ class ElevenLabsCloneVoice(DataNode):
                 if labels_json:
                     data["labels"] = labels_json
 
-            with httpx.Client(timeout=300.0) as client:
+            with provider_errors(), httpx.Client(timeout=300.0) as client:
                 response = client.post(url, data=data, files=files, headers=headers)
                 response.raise_for_status()
                 response_data = response.json()
 
                 voice_id = response_data.get("voice_id")
                 if not voice_id:
-                    error_msg = f"{self.name}: API response missing voice_id."
-                    raise RuntimeError(error_msg)
+                    msg = "ElevenLabs did not return a voice ID for the cloned voice. Run the node again."
+                    raise NodeError(msg, response=response_data if isinstance(response_data, dict) else None)
 
                 requires_verification = response_data.get("requires_verification", False)
 
@@ -256,14 +262,6 @@ class ElevenLabsCloneVoice(DataNode):
                 self.parameter_output_values["voice_id"] = voice_id
                 self.parameter_output_values["requires_verification"] = requires_verification
 
-        except httpx.HTTPStatusError as e:
-            self._logger.error(f"CloneVoice HTTP error: {e.response.status_code} - {e.response.text}")
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e:
-            self._logger.error(f"CloneVoice failed: {e}")
-            error_msg = f"Failed to create voice clone: {e}"
-            raise RuntimeError(error_msg) from e
         finally:
             # Clean up temp files
             for temp_file in temp_files:
@@ -384,30 +382,3 @@ class ElevenLabsCloneVoice(DataNode):
         # Convert to dict format - use numeric keys
         labels_dict = {str(i): item for i, item in enumerate(items)}
         return _json.dumps(labels_dict)
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "detail" in error_data:
-                detail = error_data["detail"]
-                if isinstance(detail, dict):
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-                    if status and message:
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-                elif isinstance(detail, str):
-                    return f"Error: {detail}"
-
-            if "error" in error_data:
-                error_msg = error_data["error"]
-                if isinstance(error_msg, str):
-                    return f"Error: {error_msg}"
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except Exception:
-            return f"API Error ({status_code}): Unable to parse error response"
