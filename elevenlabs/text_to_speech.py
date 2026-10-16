@@ -97,7 +97,25 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 name="text",
                 input_types=["str"],
                 type="str",
-                tooltip="Text to convert to speech",
+                tooltip=(
+                    "**Text to convert to speech**\n\n"
+                    "With `eleven_v4` and `eleven_v3` you can direct the delivery with audio tags: "
+                    "a short description in square brackets, placed before the line it affects.\n\n"
+                    "`[whispers] I never knew it could be this way, but I'm glad we're here.`\n\n"
+                    "- **Voice and emotion:** `[laughs]`, `[sighs]`, `[whispers]`, `[excited]`, `[curious]`, "
+                    "`[sarcastic]`, `[crying]`\n"
+                    "- **Sound effects:** `[applause]`, `[gunshot]`, `[explosion]`\n"
+                    "- **Experimental:** `[strong French accent]`, `[sings]`\n\n"
+                    "**Tips**\n\n"
+                    "- Tags can be combined, and match the voice. A serious voice may not suit `[giggles]`\n"
+                    "- Describe vocal quality, such as `[low, gravelly voice]`, so it isn't read as a sound cue\n"
+                    "- Ellipses add weight and pauses, and capitals add emphasis\n"
+                    "- SSML `<break>` tags are not supported on v4 or v3\n"
+                    "- A voice may follow a tag less reliably if it isn't trained on that delivery. "
+                    "Test with your voice before production\n\n"
+                    "[Audio tags and best practices]"
+                    "(https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices#voice-related)"
+                ),
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
