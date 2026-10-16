@@ -24,7 +24,7 @@ class ElevenLabsGenerateMusic(DataNode):
     - music_duration_seconds (float): Optional duration in seconds (10.0-300.0s). If not provided, API chooses length.
     - force_instrumental (bool): If true, ensures the generated song is purely instrumental (no vocals).
     - output_format (str): codec_sample_rate_bitrate. Default mp3_44100_128.
-    - model_id (str): Default music_v1.
+    - model_id (str): Default music_v2_5.
 
     Outputs:
     - audio (AudioUrlArtifact): Generated music as a playable URL.
@@ -133,10 +133,14 @@ class ElevenLabsGenerateMusic(DataNode):
                 name="model_id",
                 input_types=["str"],
                 type="str",
-                default_value="music_v1",
-                tooltip="Model to use (default: music_v1). Currently only 'music_v1' is available. Check GET /v1/models for latest models.",
+                default_value="music_v2_5",
+                tooltip=(
+                    "Model to use. music_v2_5: Most advanced, best quality and prompt adherence. "
+                    "music_v2: Studio-grade music. music_v1: First generation, outclassed by v2 and v2.5."
+                ),
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                hide_property=True,
+                traits={Options(choices=["music_v2_5", "music_v2", "music_v1"])},
+                ui_options={"display_name": "Model"},
             )
         )
 
@@ -164,7 +168,7 @@ class ElevenLabsGenerateMusic(DataNode):
         duration_seconds: float | None = self.get_parameter_value("music_duration_seconds")
         force_instrumental: bool = bool(self.get_parameter_value("force_instrumental"))
         output_format: str = self.get_parameter_value("output_format") or "mp3_44100_128"
-        model_id: str = self.get_parameter_value("model_id") or "music_v1"
+        model_id: str = self.get_parameter_value("model_id") or "music_v2_5"
 
         if prompt and len(prompt) > self.PROMPT_MAX_LENGTH:
             prompt = prompt[: self.PROMPT_MAX_LENGTH]
