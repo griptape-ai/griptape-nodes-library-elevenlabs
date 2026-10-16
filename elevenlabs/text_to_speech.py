@@ -342,7 +342,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 type="dict",
                 tooltip="Character alignment data with start/end times (if available)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                ui_options={"hide": True, "hide_property": True},
             )
         )
 
