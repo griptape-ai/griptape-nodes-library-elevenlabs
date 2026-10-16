@@ -12,6 +12,7 @@ from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.multi_options import MultiOptions
 
@@ -317,19 +318,15 @@ class ElevenLabsCloneVoice(DataNode):
             return BytesIO(audio.value)
 
         if isinstance(audio, AudioUrlArtifact):
-            # Download from URL
+            # Read from URL, local path, or macro path
             audio_url = audio.value
             if not audio_url:
                 return None
 
             try:
-                # Download audio bytes
-                with httpx.Client(timeout=300.0) as client:
-                    response = client.get(audio_url)
-                    response.raise_for_status()
-                    return BytesIO(response.content)
+                return BytesIO(File(audio_url).read_bytes())
             except Exception as e:
-                self._logger.error(f"Failed to download audio from {audio_url}: {e}")
+                self._logger.error(f"Failed to read audio from {audio_url}: {e}")
                 return None
 
         return None
