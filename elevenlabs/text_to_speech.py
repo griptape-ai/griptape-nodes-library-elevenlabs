@@ -125,6 +125,37 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
             )
         )
 
+        # Text Options
+        with ParameterGroup(name="Text_Options", collapsed=True) as text_options_group:
+            Parameter(
+                name="previous_text",
+                input_types=["str"],
+                type="str",
+                tooltip="Context for what text comes before the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with the eleven_v3 model.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "display_name": "Previous Text",
+                    "placeholder_text": "Optional: provide text that comes before for continuity...",
+                    "hide": False,
+                },
+            )
+
+            Parameter(
+                name="next_text",
+                input_types=["str"],
+                type="str",
+                tooltip="Context for what text comes after the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with the eleven_v3 model.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "display_name": "Next Text",
+                    "placeholder_text": "Optional: provide text that comes after for continuity...",
+                    "hide": False,
+                },
+            )
+        self.add_node_element(text_options_group)
+
         # Model selection. Options snaps any value outside its choices to choices[0], so the
         # deprecated ids stay in the trait's choices long enough for the converter below to
         # migrate them. ui_options["data"] lists only the current models, so the dropdown
@@ -242,64 +273,6 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
         )
         self.add_node_element(self.error_message)
 
-        self.add_parameter(
-            Parameter(
-                name="language_code",
-                input_types=["str"],
-                type="str",
-                tooltip="ISO 639-1 language code as a hint for pronunciation (optional, defaults to 'en')",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "display_name": "Language Code",
-                    "placeholder_text": "e.g., en, es, fr",
-                },
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                default_value=-1,
-                tooltip="Seed for reproducible generation (-1 for random seed)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Seed"},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="previous_text",
-                input_types=["str"],
-                type="str",
-                tooltip="Context for what text comes before the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with the eleven_v3 model.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "display_name": "Previous Text",
-                    "placeholder_text": "Optional: provide text that comes before for continuity...",
-                    "hide": False,
-                },
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="next_text",
-                input_types=["str"],
-                type="str",
-                tooltip="Context for what text comes after the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with the eleven_v3 model.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "display_name": "Next Text",
-                    "placeholder_text": "Optional: provide text that comes after for continuity...",
-                    "hide": False,
-                },
-            )
-        )
-
         # Voice Settings
         with ParameterGroup(name="Voice_Settings", collapsed=True) as voice_settings_group:
             ParameterString(
@@ -321,6 +294,27 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 allow_input=True,
                 allow_property=True,
                 allow_output=False,
+            )
+            Parameter(
+                name="language_code",
+                input_types=["str"],
+                type="str",
+                tooltip="ISO 639-1 language code as a hint for pronunciation (optional, defaults to 'en')",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "display_name": "Language Code",
+                    "placeholder_text": "e.g., en, es, fr",
+                },
+            )
+
+            Parameter(
+                name="seed",
+                input_types=["int"],
+                type="int",
+                default_value=-1,
+                tooltip="Seed for reproducible generation (-1 for random seed)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Seed"},
             )
         self.add_node_element(voice_settings_group)
 
