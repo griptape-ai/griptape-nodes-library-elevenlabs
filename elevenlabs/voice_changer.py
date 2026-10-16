@@ -199,9 +199,12 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                 type="str",
                 default_value="eleven_multilingual_sts_v2",
                 tooltip=(
-                    "Select the speech-to-speech model to use. "
-                    "eleven_multilingual_sts_v2: 29 languages. "
-                    "eleven_english_sts_v2: English only."
+                    "**Speech-to-speech model to use**\n\n"
+                    "- `eleven_multilingual_sts_v2`: 29 languages\n"
+                    "- `eleven_english_sts_v2`: English only\n\n"
+                    "[All models](https://elevenlabs.io/docs/overview/models) | "
+                    "[Using voices](https://elevenlabs.io/docs/overview/capabilities/voices) | "
+                    "[Voice changer guide](https://elevenlabs.io/docs/overview/capabilities/voice-changer)"
                 ),
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["eleven_multilingual_sts_v2", "eleven_english_sts_v2"])},

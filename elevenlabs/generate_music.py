@@ -135,8 +135,12 @@ class ElevenLabsGenerateMusic(DataNode):
                 type="str",
                 default_value="music_v2_5",
                 tooltip=(
-                    "Model to use. music_v2_5: Most advanced, best quality and prompt adherence. "
-                    "music_v2: Studio-grade music. music_v1: First generation, outclassed by v2 and v2.5."
+                    "**Music model to use**\n\n"
+                    "- `music_v2_5`: Most advanced, best quality and prompt adherence\n"
+                    "- `music_v2`: Studio-grade music\n"
+                    "- `music_v1`: First generation, outclassed by v2 and v2.5\n\n"
+                    "[All models](https://elevenlabs.io/docs/overview/models) | "
+                    "[Music guide](https://elevenlabs.io/docs/overview/capabilities/music)"
                 ),
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["music_v2_5", "music_v2", "music_v1"])},

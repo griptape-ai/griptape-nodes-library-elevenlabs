@@ -114,14 +114,18 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
             type="str",
             default_value=DEFAULT_MODEL,
             tooltip=(
-                "ElevenLabs model to use. "
-                "eleven_v4: Flagship, most emotive, 90+ languages (10k char limit). "
-                "eleven_v4_turbo: Most expressive real-time model (~100ms). "
-                "eleven_v3: Previous generation, expressive and dramatic (5k char limit, "
-                "no previous_text/next_text). "
-                "eleven_multilingual_v2: Stable on long-form (10k char limit). "
-                "eleven_flash_v2_5: Fast and affordable (~75ms, 40k char limit). "
-                "eleven_flash_v2: Ultra-low latency, English only (~75ms, 30k char limit)."
+                "**ElevenLabs model to use**\n\n"
+                "- `eleven_v4`: Flagship, most emotive, 90+ languages (10k char limit)\n"
+                "- `eleven_v4_turbo`: Most expressive real-time model (~100ms)\n"
+                "- `eleven_v3`: Previous generation, expressive and dramatic (5k char limit, "
+                "no previous_text/next_text)\n"
+                "- `eleven_multilingual_v2`: Stable on long-form (10k char limit)\n"
+                "- `eleven_flash_v2_5`: Fast and affordable (~75ms, 40k char limit)\n"
+                "- `eleven_flash_v2`: Ultra-low latency, English only (~75ms, 30k char limit)\n\n"
+                "[Choosing a model](https://elevenlabs.io/docs/eleven-api/choosing-the-right-model) | "
+                "[All models](https://elevenlabs.io/docs/overview/models) | "
+                "[Using voices](https://elevenlabs.io/docs/overview/capabilities/voices) | "
+                "[Text to speech guide](https://elevenlabs.io/docs/overview/capabilities/text-to-speech)"
             ),
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             traits={Options(choices=[*MODEL_CHOICES, *LEGACY_MODEL_VALUES])},
