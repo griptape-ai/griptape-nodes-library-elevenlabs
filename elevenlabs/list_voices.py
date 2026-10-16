@@ -14,8 +14,8 @@ class ElevenLabsListVoices(DataNode):
     """List up to 100 voices in the user's ElevenLabs account and display 10 per page.
 
     UI per-slot (1..10):
-    - voice_id_i (OUTPUT str)
     - name_i (PROPERTY str, display-only)
+    - voice_id_i (OUTPUT str)
     - preview_i (OUTPUT AudioUrlArtifact) using preview_url directly
     """
 
@@ -61,18 +61,8 @@ class ElevenLabsListVoices(DataNode):
             )
         )
 
-        # Outputs per slot (hidden until first successful run)
+        # Outputs per slot, in display order: name, ID, sample (hidden until first successful run)
         for i in range(1, 11):
-            self.add_parameter(
-                Parameter(
-                    name=f"voice_id_{i}",
-                    output_type="str",
-                    type="str",
-                    tooltip=f"Voice ID #{i}",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    ui_options={"display_name": f"Voice ID {i}", "hide_property": True},
-                )
-            )
             self.add_parameter(
                 Parameter(
                     name=f"name_{i}",
@@ -81,6 +71,16 @@ class ElevenLabsListVoices(DataNode):
                     tooltip=f"Voice name for slot {i}",
                     allowed_modes={ParameterMode.PROPERTY},
                     ui_options={"display_name": f"Voice {i}", "disabled": True},
+                )
+            )
+            self.add_parameter(
+                Parameter(
+                    name=f"voice_id_{i}",
+                    output_type="str",
+                    type="str",
+                    tooltip=f"Voice ID #{i}",
+                    allowed_modes={ParameterMode.OUTPUT},
+                    ui_options={"display_name": f"Voice ID {i}", "hide_property": True},
                 )
             )
             self.add_parameter(
