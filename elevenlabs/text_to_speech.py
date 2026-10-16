@@ -18,6 +18,28 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MODEL = "eleven_v4"
+MODEL_CHOICES = [
+    "eleven_v4",
+    "eleven_v4_turbo",
+    "eleven_v3",
+    "eleven_multilingual_v2",
+    "eleven_flash_v2_5",
+    "eleven_flash_v2",
+]
+
+# Eleven v4 has no Speed setting (or SSML), so the speed slider is hidden and not sent.
+NO_SPEED_MODELS = {"eleven_v4", "eleven_v4_turbo"}
+
+# ElevenLabs deprecated the turbo models in favor of the matching flash models.
+# A saved workflow that references one migrates to its replacement. eleven_monolingual_v1
+# is no longer listed in the models overview and maps to the stable long-form model.
+LEGACY_MODEL_VALUES: dict[str, str] = {
+    "eleven_turbo_v2_5": "eleven_flash_v2_5",
+    "eleven_turbo_v2": "eleven_flash_v2",
+    "eleven_monolingual_v1": "eleven_multilingual_v2",
+}
+
 PROMPT_TRUNCATE_LENGTH = 100
 
 # Voice preset mapping - friendly names to Eleven Labs voice IDs (sorted alphabetically)
@@ -38,6 +60,13 @@ VOICE_PRESET_MAP = {  # spellchecker:disable-line
     "Sarah": "EXAVITQu4vr4xnSDxMaL",  # spellchecker:disable-line
     "Thomas": "GBv7mTt0atIp3Br8iCZE",  # spellchecker:disable-line
 }
+
+
+def _migrate_legacy_model(value: Any) -> Any:
+    """Map a deprecated model id to its replacement; pass every other value through."""
+    if isinstance(value, str):
+        return LEGACY_MODEL_VALUES.get(value, value)
+    return value
 
 
 class ElevenLabsTextToSpeech(SuccessFailureNode):
@@ -68,7 +97,25 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 name="text",
                 input_types=["str"],
                 type="str",
-                tooltip="Text to convert to speech",
+                tooltip=(
+                    "**Text to convert to speech**\n\n"
+                    "With `eleven_v4` and `eleven_v3` you can direct the delivery with audio tags: "
+                    "a short description in square brackets, placed before the line it affects.\n\n"
+                    "`[whispers] I never knew it could be this way, but I'm glad we're here.`\n\n"
+                    "- **Voice and emotion:** `[laughs]`, `[sighs]`, `[whispers]`, `[excited]`, `[curious]`, "
+                    "`[sarcastic]`, `[crying]`\n"
+                    "- **Sound effects:** `[applause]`, `[gunshot]`, `[explosion]`\n"
+                    "- **Experimental:** `[strong French accent]`, `[sings]`\n\n"
+                    "**Tips**\n\n"
+                    "- Tags can be combined, and match the voice. A serious voice may not suit `[giggles]`\n"
+                    "- Describe vocal quality, such as `[low, gravelly voice]`, so it isn't read as a sound cue\n"
+                    "- Ellipses add weight and pauses, and capitals add emphasis\n"
+                    "- SSML `<break>` tags are not supported on v4 or v3\n"
+                    "- A voice may follow a tag less reliably if it isn't trained on that delivery. "
+                    "Test with your voice before production\n\n"
+                    "[Audio tags and best practices]"
+                    "(https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices#voice-related)"
+                ),
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
@@ -78,37 +125,39 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
             )
         )
 
-        # Model selection
-        self.add_parameter(
-            Parameter(
-                name="model_id",
-                input_types=["str"],
-                type="str",
-                default_value="eleven_multilingual_v2",
-                tooltip=(
-                    "ElevenLabs model to use. "
-                    "eleven_v3: Most expressive (alpha, 3k char limit, no previous_text/next_text). "
-                    "eleven_multilingual_v2: Best for long-form (10k char limit). "
-                    "eleven_flash_v2_5: Ultra-fast (~75ms). "
-                    "eleven_turbo_v2_5: Fast and high quality (~250-300ms)."
-                ),
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "eleven_multilingual_v2",
-                            "eleven_turbo_v2_5",
-                            "eleven_flash_v2_5",
-                            "eleven_v3",
-                            "eleven_turbo_v2",
-                            "eleven_flash_v2",
-                            "eleven_monolingual_v1",
-                        ]
-                    )
-                },
-                ui_options={"display_name": "Model"},
-            )
+        # Model selection. Options snaps any value outside its choices to choices[0], so the
+        # deprecated ids stay in the trait's choices long enough for the converter below to
+        # migrate them. ui_options["data"] lists only the current models, so the dropdown
+        # never offers a deprecated one.
+        model_param = Parameter(
+            name="model_id",
+            input_types=["str"],
+            type="str",
+            default_value=DEFAULT_MODEL,
+            tooltip=(
+                "**ElevenLabs model to use**\n\n"
+                "- `eleven_v4`: Flagship, most emotive, 90+ languages (10k char limit). No speed control\n"
+                "- `eleven_v4_turbo`: Most expressive real-time model (~100ms). No speed control\n"
+                "- `eleven_v3`: Previous generation, expressive and dramatic (5k char limit, "
+                "no previous_text/next_text)\n"
+                "- `eleven_multilingual_v2`: Stable on long-form (10k char limit)\n"
+                "- `eleven_flash_v2_5`: Fast and affordable (~75ms, 40k char limit)\n"
+                "- `eleven_flash_v2`: Ultra-low latency, English only (~75ms, 30k char limit)\n\n"
+                "[Eleven v4](https://elevenlabs.io/docs/overview/capabilities/text-to-speech/eleven-v4) | "
+                "[Choosing a model](https://elevenlabs.io/docs/eleven-api/choosing-the-right-model) | "
+                "[All models](https://elevenlabs.io/docs/overview/models) | "
+                "[Using voices](https://elevenlabs.io/docs/overview/capabilities/voices) | "
+                "[Text to speech guide](https://elevenlabs.io/docs/overview/capabilities/text-to-speech)"
+            ),
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            traits={Options(choices=[*MODEL_CHOICES, *LEGACY_MODEL_VALUES])},
+            ui_options={
+                "display_name": "Model",
+                "data": [{"name": choice} for choice in MODEL_CHOICES],
+            },
         )
+        model_param.add_converter(_migrate_legacy_model)
+        self.add_parameter(model_param)
 
         # Voice preset selection
         self.add_parameter(
@@ -224,7 +273,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 name="previous_text",
                 input_types=["str"],
                 type="str",
-                tooltip="Context for what text comes before the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with eleven_v3 model.",
+                tooltip="Context for what text comes before the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with the eleven_v3 model.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
@@ -240,7 +289,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 name="next_text",
                 input_types=["str"],
                 type="str",
-                tooltip="Context for what text comes after the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with eleven_v3 model.",
+                tooltip="Context for what text comes after the generated speech. Helps maintain continuity between consecutive speech generations. Not supported with the eleven_v3 model.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
@@ -268,7 +317,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                 min_val=0.7,
                 max_val=1.2,
                 slider=True,
-                tooltip="Controls speech rate. Default is 1.0 (normal pace). Values below 1.0 slow down speech (minimum 0.7), values above 1.0 speed up speech (maximum 1.2). Extreme values may affect quality.",
+                tooltip="Controls speech rate (not available on eleven_v4 models). Default is 1.0 (normal pace). Values below 1.0 slow down speech (minimum 0.7), values above 1.0 speed up speech (maximum 1.2). Extreme values may affect quality.",
                 allow_input=True,
                 allow_property=True,
                 allow_output=False,
@@ -312,10 +361,12 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
 
         # Initialize visibility based on default model
         # Hide previous_text and next_text if default model is eleven_v3
-        default_model = self.get_parameter_value("model_id") or "eleven_multilingual_v2"
+        default_model = self.get_parameter_value("model_id") or DEFAULT_MODEL
         if default_model == "eleven_v3":
             self.hide_parameter_by_name("previous_text")
             self.hide_parameter_by_name("next_text")
+        if default_model in NO_SPEED_MODELS:
+            self.hide_parameter_by_name("speed")
 
         # Fetch voice preview for the default voice on node creation
         self._fetch_voice_preview()
@@ -344,6 +395,10 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
             else:
                 self.show_parameter_by_name("previous_text")
                 self.show_parameter_by_name("next_text")
+            if value in NO_SPEED_MODELS:
+                self.hide_parameter_by_name("speed")
+            else:
+                self.show_parameter_by_name("speed")
 
         return super().after_value_set(parameter, value)
 
@@ -550,7 +605,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
 
     def _get_parameters(self) -> dict[str, Any]:
         text = self.get_parameter_value("text") or ""
-        model_id = self.get_parameter_value("model_id") or "eleven_multilingual_v2"
+        model_id = self.get_parameter_value("model_id") or DEFAULT_MODEL
         language_code = self.get_parameter_value("language_code")
         seed = self.get_parameter_value("seed")
         previous_text = self.get_parameter_value("previous_text")
@@ -591,7 +646,7 @@ class ElevenLabsTextToSpeech(SuccessFailureNode):
                     msg = f"{self.name} received invalid stability value: {stability_str}. Must be one of: Creative, Natural, or Robust"
                     raise ValueError(msg)
 
-        if speed is not None:
+        if speed is not None and model_id not in NO_SPEED_MODELS:
             voice_settings["speed"] = speed
 
         if voice_settings:

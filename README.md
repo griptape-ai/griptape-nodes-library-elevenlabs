@@ -11,7 +11,7 @@ This library provides Griptape nodes for interacting with the [ElevenLabs API](h
 - **Sound Effects**: Generate sound effects from text descriptions
 - **Music Generation**: Generate music from text prompts
 - **Voice Management**: List and manage your ElevenLabs voices
-- Support for multiple models (multilingual, turbo, flash, v3)
+- Support for multiple models (v4, v3, multilingual, flash)
 - Voice preview functionality with automatic loading
 - Async implementation for efficient processing
 
@@ -46,11 +46,15 @@ Generate high-quality speech from text with support for:
 - Multiple voice presets (Alexandra, Antoni, Austin, Clyde, Dave, Domi, Drew, Fin, Hope, James, Jane, Paul, Rachel, Sarah, Thomas)
 - Custom voice IDs from your ElevenLabs account
 - Multiple models:
-  - `eleven_multilingual_v2`: Best for long-form content (10k char limit)
-  - `eleven_turbo_v2_5`: Fast and high quality (~250-300ms)
-  - `eleven_flash_v2_5`: Ultra-fast (~75ms)
-  - `eleven_v3`: Most expressive (alpha, 3k char limit)
-- Voice settings (stability, speed)
+  - `eleven_v4`: Flagship, most emotive, 90+ languages (10k char limit, no speed control)
+  - `eleven_v4_turbo`: Most expressive real-time model (~100ms, no speed control)
+  - `eleven_v3`: Previous generation, expressive and dramatic (5k char limit)
+  - `eleven_multilingual_v2`: Stable on long-form content (10k char limit)
+  - `eleven_flash_v2_5`: Fast and affordable (~75ms, 40k char limit)
+  - `eleven_flash_v2`: Ultra-low latency, English only (~75ms, 30k char limit)
+- Saved workflows that use the deprecated `eleven_turbo_v2_5`, `eleven_turbo_v2` or `eleven_monolingual_v1` models are migrated automatically to `eleven_flash_v2_5`, `eleven_flash_v2` and `eleven_multilingual_v2`
+- Audio tags (such as `[whispers]` or `[laughs]`) in the text with `eleven_v4` and `eleven_v3`
+- Voice settings (stability, and speed on models that support it)
 - Context support (previous_text/next_text) for continuity between generations
 - Language code hints for pronunciation
 - Seed support for reproducible generation
@@ -60,6 +64,7 @@ Generate high-quality speech from text with support for:
 
 Transform audio from one voice to another using speech-to-speech technology:
 - Support for both audio and video inputs (audio extracted from video automatically)
+- Models: `eleven_multilingual_sts_v2` (29 languages) and `eleven_english_sts_v2` (English only)
 - Maintains emotion, timing, and delivery of original audio
 - Voice preset selection or custom voice IDs
 - Voice settings (stability, similarity_boost)
@@ -111,6 +116,7 @@ Generate sound effects from text descriptions:
 
 Generate music from text prompts:
 - Text-to-music generation
+- Models: `music_v2_5` (default, most advanced), `music_v2` and `music_v1`
 - Returns playable audio URL
 - Create background music or musical compositions
 
