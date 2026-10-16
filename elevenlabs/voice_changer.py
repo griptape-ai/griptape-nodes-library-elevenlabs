@@ -16,6 +16,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.options import Options
@@ -439,7 +440,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             cmd = [
                 ffmpeg_path,
                 "-i",
-                video_url,
+                File(video_url).resolve(),
                 "-vn",  # No video
                 "-acodec",
                 "libmp3lame",
@@ -477,14 +478,11 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                 temp_audio_path.unlink()
 
     async def _download_audio(self, audio_url: str) -> bytes:
-        """Download audio from URL."""
+        """Read audio from a URL, local path, or macro path."""
         try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.get(audio_url)
-                response.raise_for_status()
-                return response.content
+            return await File(audio_url).aread_bytes()
         except Exception as e:
-            error_msg = f"Failed to download audio from {audio_url}: {e}"
+            error_msg = f"Failed to read audio from {audio_url}: {e}"
             raise ValueError(error_msg) from e
 
     def _get_parameters(self) -> dict[str, Any]:
