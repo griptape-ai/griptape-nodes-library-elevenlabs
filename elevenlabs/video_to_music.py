@@ -3,7 +3,10 @@ from __future__ import annotations
 import base64
 import json as _json
 import logging
+import io
 import mimetypes
+import zipfile
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 
@@ -51,13 +54,16 @@ class ElevenLabsVideoToMusic(DataNode):
     - videos: Up to 10 videos (200 MB and 600 seconds combined). Multiple videos are combined in order.
     - description: Optional guidance for the music (<=4100 chars).
     - tags: Optional style tags, such as upbeat or cinematic (max 10).
+    - model_id: Music model. Default music_v2_5.
     - add_sfx: If true, include sound-effect cues detected in the video.
+    - separate_tracks: If true, return the music and the sound effects as separate tracks.
     - use_audio_as_reference: If true, use the video's own audio (genre, BPM, mood, arc) as a reference.
     - sign_with_c2pa: If true, sign the output with C2PA (MP3 output only).
     - output_format: codec_sample_rate_bitrate. Default mp3_44100_128.
 
     Outputs:
     - audio (AudioUrlArtifact): Generated music as a playable URL.
+    - sfx_audio (AudioUrlArtifact): The sound-effects track, when separate_tracks is true.
     """
 
     API_KEY_NAME: str = "ELEVEN_LABS_API_KEY"
@@ -122,12 +128,43 @@ class ElevenLabsVideoToMusic(DataNode):
             )
         )
         self.add_parameter(
+            Parameter(
+                name="model_id",
+                input_types=["str"],
+                type="str",
+                default_value="music_v2_5",
+                tooltip=(
+                    "**Music model to use**\n\n"
+                    "- `music_v2_5`: Most advanced, best quality and prompt adherence\n"
+                    "- `music_v2`: Studio-grade music\n"
+                    "- `music_v1`: First generation, outclassed by v2 and v2.5\n\n"
+                    "[All models](https://elevenlabs.io/docs/overview/models)"
+                ),
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["music_v2_5", "music_v2", "music_v1"])},
+                ui_options={"display_name": "Model"},
+            )
+        )
+        self.add_parameter(
             ParameterBool(
                 name="add_sfx",
                 default_value=False,
                 tooltip="If true, include sound-effect cues detected in the video.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Add Sound Effects"},
+            )
+        )
+        self.add_parameter(
+            ParameterBool(
+                name="separate_tracks",
+                default_value=False,
+                tooltip=(
+                    "If true, return the music and the sound effects as separate tracks "
+                    "(the API sends a ZIP, which the node unpacks into the Music and Sound Effects outputs). "
+                    "Use Add Sound Effects as well, so there are effects to separate."
+                ),
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Separate Tracks"},
             )
         )
         self.add_parameter(
@@ -165,6 +202,14 @@ class ElevenLabsVideoToMusic(DataNode):
             node=self, name="output_file", default_filename="elevenlabs_video_music.mp3"
         )
         self._output_file.add_parameter()
+        # The sound-effects track gets its own destination so it never overwrites the music file.
+        self._sfx_output_file = ProjectFileParameter(
+            node=self,
+            name="sfx_output_file",
+            default_filename="elevenlabs_video_sfx.mp3",
+            ui_options={"hide": True},
+        )
+        self._sfx_output_file.add_parameter()
 
         self.add_parameter(
             Parameter(
@@ -176,6 +221,25 @@ class ElevenLabsVideoToMusic(DataNode):
                 ui_options={"display_name": "Music", "expander": True, "pulse_on_run": True},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="sfx_audio",
+                output_type="AudioUrlArtifact",
+                type="AudioUrlArtifact",
+                tooltip="Sound-effects track (only when Separate Tracks is true).",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"display_name": "Sound Effects", "expander": True, "hide": True},
+            )
+        )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "separate_tracks":
+            for name in ("sfx_output_file", "sfx_audio"):
+                if value:
+                    self.show_parameter_by_name(name)
+                else:
+                    self.hide_parameter_by_name(name)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> Any:
         yield lambda: self._run()
@@ -184,7 +248,9 @@ class ElevenLabsVideoToMusic(DataNode):
         videos_input = self.get_parameter_value("videos")
         description: str | None = self.get_parameter_value("description")
         tags = self._normalize_tags(self.get_parameter_value("tags"))
+        model_id: str = self.get_parameter_value("model_id") or "music_v2_5"
         add_sfx = bool(self.get_parameter_value("add_sfx"))
+        separate_tracks = bool(self.get_parameter_value("separate_tracks"))
         use_audio_as_reference = bool(self.get_parameter_value("use_audio_as_reference"))
         sign_with_c2pa = bool(self.get_parameter_value("sign_with_c2pa"))
         output_format: str = self.get_parameter_value("output_format") or "mp3_44100_128"
@@ -204,13 +270,15 @@ class ElevenLabsVideoToMusic(DataNode):
 
         files = self._load_videos(video_sources)
 
-        data: dict[str, Any] = {}
+        data: dict[str, Any] = {"model_id": model_id}
         if description:
             data["description"] = description[: self.MAX_DESCRIPTION_LENGTH]
         if tags:
             data["tags"] = tags
         if add_sfx:
             data["add_sfx"] = "true"
+        if separate_tracks:
+            data["separate_tracks"] = "true"
         if use_audio_as_reference:
             data["use_audio_as_reference"] = "true"
         if sign_with_c2pa:
@@ -220,12 +288,14 @@ class ElevenLabsVideoToMusic(DataNode):
         headers = {"xi-api-key": api_key}
 
         self._logger.info(
-            "VideoToMusic request: videos=%s, description_len=%s, tags=%s, add_sfx=%s, "
-            "use_audio_as_reference=%s, sign_with_c2pa=%s, output_format=%s",
+            "VideoToMusic request: videos=%s, description_len=%s, tags=%s, model_id=%s, add_sfx=%s, "
+            "separate_tracks=%s, use_audio_as_reference=%s, sign_with_c2pa=%s, output_format=%s",
             len(files),
             len(description) if description else None,
             tags,
+            model_id,
             add_sfx,
+            separate_tracks,
             use_audio_as_reference,
             sign_with_c2pa,
             output_format,
@@ -244,7 +314,57 @@ class ElevenLabsVideoToMusic(DataNode):
             error_msg = f"Request failed: {e}"
             raise RuntimeError(error_msg) from e
 
-        self.parameter_output_values["audio"] = self._save_audio(resp_bytes, output_format)
+        if separate_tracks:
+            music_bytes, sfx_bytes, music_ext, sfx_ext = self._split_tracks(resp_bytes)
+            self.parameter_output_values["audio"] = self._save_audio(
+                music_bytes, output_format, self._output_file, ext=music_ext
+            )
+            self.parameter_output_values["sfx_audio"] = (
+                self._save_audio(sfx_bytes, output_format, self._sfx_output_file, ext=sfx_ext) if sfx_bytes else None
+            )
+            return
+
+        self.parameter_output_values["audio"] = self._save_audio(resp_bytes, output_format, self._output_file)
+        self.parameter_output_values["sfx_audio"] = None
+
+    def _split_tracks(self, zip_bytes: bytes) -> tuple[bytes, bytes | None, str | None, str | None]:
+        """Unpack the separate-tracks ZIP into (music, sfx, music_ext, sfx_ext).
+
+        The API docs describe the ZIP only as separate music and SFX audio files, so the SFX track is
+        found by name ("sfx" or "effect"). If no name matches, the first file is the music and the rest
+        are treated as the SFX track.
+        """
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        except zipfile.BadZipFile as e:
+            error_msg = f"{self.name}: Expected a ZIP of separate tracks but the response was not a ZIP."
+            raise RuntimeError(error_msg) from e
+
+        members = sorted(info.filename for info in archive.infolist() if not info.is_dir())
+        if not members:
+            error_msg = f"{self.name}: The separate-tracks ZIP was empty."
+            raise RuntimeError(error_msg)
+
+        sfx_names = [name for name in members if any(key in name.lower() for key in ("sfx", "effect"))]
+        music_names = [name for name in members if name not in sfx_names]
+        if not sfx_names and len(members) > 1:
+            music_names, sfx_names = members[:1], members[1:]
+        if not music_names:
+            music_names, sfx_names = sfx_names[:1], sfx_names[1:]
+
+        def ext_of(name: str) -> str | None:
+            suffix = PurePosixPath(name).suffix.lstrip(".")
+            return suffix or None
+
+        music_name = music_names[0]
+        sfx_name = sfx_names[0] if sfx_names else None
+        self._logger.info("VideoToMusic ZIP members: %s (music=%s, sfx=%s)", members, music_name, sfx_name)
+        return (
+            archive.read(music_name),
+            archive.read(sfx_name) if sfx_name else None,
+            ext_of(music_name),
+            ext_of(sfx_name) if sfx_name else None,
+        )
 
     def _collect_video_sources(self, videos_input: Any) -> list[str]:
         """Return the location string of each connected video."""
@@ -305,18 +425,24 @@ class ElevenLabsVideoToMusic(DataNode):
         cleaned = [str(tag).strip() for tag in tags if tag and str(tag).strip()]
         return cleaned[: self.MAX_TAGS]
 
-    def _save_audio(self, resp_bytes: bytes, output_format: str) -> AudioUrlArtifact | None:
+    def _save_audio(
+        self,
+        resp_bytes: bytes,
+        output_format: str,
+        destination: ProjectFileParameter,
+        *,
+        ext: str | None = None,
+    ) -> AudioUrlArtifact | None:
         if not resp_bytes:
             return None
-        ext = "mp3"
-        if output_format.startswith("pcm"):
-            ext = "wav"
-        elif output_format.startswith("opus"):
-            ext = "opus"
+        if ext is None:
+            ext = "mp3"
+            if output_format.startswith("pcm"):
+                ext = "wav"
+            elif output_format.startswith("opus"):
+                ext = "opus"
         try:
-            saved = self._output_file.build_file(default_filename=f"elevenlabs_video_music.{ext}").write_bytes(
-                resp_bytes
-            )
+            saved = destination.build_file().write_bytes(resp_bytes)
             return AudioUrlArtifact(value=saved.location, name=saved.location)
         except Exception as e_save:
             b64 = base64.b64encode(resp_bytes).decode("ascii")
