@@ -6,7 +6,6 @@ import json as _json
 import logging
 import mimetypes
 import zipfile
-from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 
@@ -22,6 +21,9 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.multi_options import MultiOptions
 from griptape_nodes.traits.options import Options
 
+# Only formats that carry their own header. The raw pcm_*, ulaw_* and alaw_* formats are left out
+# because the saved file is named from the output parameter, and headerless bytes would be saved as
+# an .mp3 that no player can decode.
 OUTPUT_FORMATS = [
     "mp3_22050_32",
     "mp3_24000_48",
@@ -30,15 +32,6 @@ OUTPUT_FORMATS = [
     "mp3_44100_96",
     "mp3_44100_128",
     "mp3_44100_192",
-    "pcm_8000",
-    "pcm_16000",
-    "pcm_22050",
-    "pcm_24000",
-    "pcm_32000",
-    "pcm_44100",
-    "pcm_48000",
-    "ulaw_8000",
-    "alaw_8000",
     "opus_48000_32",
     "opus_48000_64",
     "opus_48000_96",
@@ -191,7 +184,7 @@ class ElevenLabsVideoToMusic(DataNode):
                 input_types=["str"],
                 type="str",
                 default_value="mp3_44100_128",
-                tooltip="Audio output format. MP3 at 192 kbps needs a Creator tier or higher, and PCM at 44.1 kHz needs Pro.",
+                tooltip="Audio output format. MP3 at 192 kbps needs a Creator tier or higher.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=OUTPUT_FORMATS)},
                 ui_options={"display_name": "Output Format"},
@@ -315,20 +308,18 @@ class ElevenLabsVideoToMusic(DataNode):
             raise RuntimeError(error_msg) from e
 
         if separate_tracks:
-            music_bytes, sfx_bytes, music_ext, sfx_ext = self._split_tracks(resp_bytes)
-            self.parameter_output_values["audio"] = self._save_audio(
-                music_bytes, output_format, self._output_file, ext=music_ext
-            )
+            music_bytes, sfx_bytes = self._split_tracks(resp_bytes)
+            self.parameter_output_values["audio"] = self._save_audio(music_bytes, output_format, self._output_file)
             self.parameter_output_values["sfx_audio"] = (
-                self._save_audio(sfx_bytes, output_format, self._sfx_output_file, ext=sfx_ext) if sfx_bytes else None
+                self._save_audio(sfx_bytes, output_format, self._sfx_output_file) if sfx_bytes else None
             )
             return
 
         self.parameter_output_values["audio"] = self._save_audio(resp_bytes, output_format, self._output_file)
         self.parameter_output_values["sfx_audio"] = None
 
-    def _split_tracks(self, zip_bytes: bytes) -> tuple[bytes, bytes | None, str | None, str | None]:
-        """Unpack the separate-tracks ZIP into (music, sfx, music_ext, sfx_ext).
+    def _split_tracks(self, zip_bytes: bytes) -> tuple[bytes, bytes | None]:
+        """Unpack the separate-tracks ZIP into (music, sfx).
 
         The API docs describe the ZIP only as separate music and SFX audio files, so the SFX track is
         found by name ("sfx" or "effect"). If no name matches, the first file is the music and the rest
@@ -352,19 +343,10 @@ class ElevenLabsVideoToMusic(DataNode):
         if not music_names:
             music_names, sfx_names = sfx_names[:1], sfx_names[1:]
 
-        def ext_of(name: str) -> str | None:
-            suffix = PurePosixPath(name).suffix.lstrip(".")
-            return suffix or None
-
         music_name = music_names[0]
         sfx_name = sfx_names[0] if sfx_names else None
         self._logger.info("VideoToMusic ZIP members: %s (music=%s, sfx=%s)", members, music_name, sfx_name)
-        return (
-            archive.read(music_name),
-            archive.read(sfx_name) if sfx_name else None,
-            ext_of(music_name),
-            ext_of(sfx_name) if sfx_name else None,
-        )
+        return archive.read(music_name), archive.read(sfx_name) if sfx_name else None
 
     def _collect_video_sources(self, videos_input: Any) -> list[str]:
         """Return the location string of each connected video."""
@@ -426,27 +408,16 @@ class ElevenLabsVideoToMusic(DataNode):
         return cleaned[: self.MAX_TAGS]
 
     def _save_audio(
-        self,
-        resp_bytes: bytes,
-        output_format: str,
-        destination: ProjectFileParameter,
-        *,
-        ext: str | None = None,
+        self, resp_bytes: bytes, output_format: str, destination: ProjectFileParameter
     ) -> AudioUrlArtifact | None:
         if not resp_bytes:
             return None
-        if ext is None:
-            ext = "mp3"
-            if output_format.startswith("pcm"):
-                ext = "wav"
-            elif output_format.startswith("opus"):
-                ext = "opus"
         try:
             saved = destination.build_file().write_bytes(resp_bytes)
             return AudioUrlArtifact(value=saved.location, name=saved.location)
         except Exception as e_save:
             b64 = base64.b64encode(resp_bytes).decode("ascii")
-            mime = "audio/wav" if ext == "wav" else "audio/ogg" if ext == "opus" else "audio/mpeg"
+            mime = "audio/ogg" if output_format.startswith("opus") else "audio/mpeg"
             self._logger.info("VideoToMusic file save failed; used data URL: %s", e_save)
             return AudioUrlArtifact(value=f"data:{mime};base64,{b64}", name="music")
 
