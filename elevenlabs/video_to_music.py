@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import base64
+import io
 import json as _json
 import logging
-import io
 import mimetypes
 import zipfile
 from pathlib import PurePosixPath
@@ -420,7 +420,7 @@ class ElevenLabsVideoToMusic(DataNode):
             try:
                 parsed = _json.loads(tags)
             except (_json.JSONDecodeError, TypeError):
-                parsed = [part for part in tags.split(",")]
+                parsed = tags.split(",")
             tags = parsed if isinstance(parsed, list) else [tags]
         cleaned = [str(tag).strip() for tag in tags if tag and str(tag).strip()]
         return cleaned[: self.MAX_TAGS]
