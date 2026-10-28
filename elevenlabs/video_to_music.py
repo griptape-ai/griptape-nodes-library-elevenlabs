@@ -86,9 +86,9 @@ class ElevenLabsVideoToMusic(DataNode):
                 ),
                 input_types=["VideoUrlArtifact", "VideoArtifact"],
                 type="VideoUrlArtifact",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.INPUT},
                 default_value=[],
-                ui_options={"display_name": "Video(s)", "expander": True},
+                ui_options={"display_name": "Video(s)", "expander": True, "hide_property": True},
             )
         )
         self.add_parameter(
