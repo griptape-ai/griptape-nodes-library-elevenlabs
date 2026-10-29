@@ -15,6 +15,43 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
+# Raw formats carry no header, and the saved file is named from the output parameter, so their bytes
+# ended up in an .mp3 that no player can decode. They are no longer offered, and a saved workflow
+# that used one migrates to the default MP3 format.
+RAW_OUTPUT_FORMATS = [
+    "pcm_8000",
+    "pcm_16000",
+    "pcm_22050",
+    "pcm_24000",
+    "pcm_32000",
+    "pcm_44100",
+    "pcm_48000",
+    "ulaw_8000",
+    "alaw_8000",
+]
+OUTPUT_FORMAT_CHOICES = [
+    "mp3_22050_32",
+    "mp3_24000_48",
+    "mp3_44100_32",
+    "mp3_44100_64",
+    "mp3_44100_96",
+    "mp3_44100_128",
+    "mp3_44100_192",
+    "opus_48000_32",
+    "opus_48000_64",
+    "opus_48000_96",
+    "opus_48000_128",
+    "opus_48000_192",
+]
+DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
+
+
+def _migrate_raw_output_format(value: Any) -> Any:
+    """Map a retired raw output format to the default MP3 format; pass every other value through."""
+    if isinstance(value, str) and value in RAW_OUTPUT_FORMATS:
+        return DEFAULT_OUTPUT_FORMAT
+    return value
+
 
 class ElevenLabsGenerateMusic(DataNode):
     """Generate music from a prompt using ElevenLabs Music API and return a playable URL.
@@ -90,44 +127,21 @@ class ElevenLabsGenerateMusic(DataNode):
                 ui_options={"display_name": "Force Instrumental"},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="output_format",
-                input_types=["str"],
-                type="str",
-                default_value="mp3_44100_128",
-                tooltip="Audio output format",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "mp3_22050_32",
-                            "mp3_24000_48",
-                            "mp3_44100_32",
-                            "mp3_44100_64",
-                            "mp3_44100_96",
-                            "mp3_44100_128",
-                            "mp3_44100_192",
-                            "pcm_8000",
-                            "pcm_16000",
-                            "pcm_22050",
-                            "pcm_24000",
-                            "pcm_32000",
-                            "pcm_44100",
-                            "pcm_48000",
-                            "ulaw_8000",
-                            "alaw_8000",
-                            "opus_48000_32",
-                            "opus_48000_64",
-                            "opus_48000_96",
-                            "opus_48000_128",
-                            "opus_48000_192",
-                        ]
-                    )
-                },
-                ui_options={"display_name": "Output Format"},
-            )
+        output_format_param = Parameter(
+            name="output_format",
+            input_types=["str"],
+            type="str",
+            default_value=DEFAULT_OUTPUT_FORMAT,
+            tooltip="Audio output format",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            traits={Options(choices=[*OUTPUT_FORMAT_CHOICES, *RAW_OUTPUT_FORMATS])},
+            ui_options={
+                "display_name": "Output Format",
+                "data": [{"name": choice} for choice in OUTPUT_FORMAT_CHOICES],
+            },
         )
+        output_format_param.add_converter(_migrate_raw_output_format)
+        self.add_parameter(output_format_param)
         self.add_parameter(
             Parameter(
                 name="model_id",
@@ -171,7 +185,7 @@ class ElevenLabsGenerateMusic(DataNode):
         use_length: bool = bool(self.get_parameter_value("use_specific_length"))
         duration_seconds: float | None = self.get_parameter_value("music_duration_seconds")
         force_instrumental: bool = bool(self.get_parameter_value("force_instrumental"))
-        output_format: str = self.get_parameter_value("output_format") or "mp3_44100_128"
+        output_format: str = self.get_parameter_value("output_format") or DEFAULT_OUTPUT_FORMAT
         model_id: str = self.get_parameter_value("model_id") or "music_v2_5"
 
         if prompt and len(prompt) > self.PROMPT_MAX_LENGTH:
@@ -242,19 +256,12 @@ class ElevenLabsGenerateMusic(DataNode):
         audio_artifact = None
         if resp_bytes:
             try:
-                # Guess extension from output_format
-                ext = "mp3"
-                if isinstance(output_format, str):
-                    if output_format.startswith("pcm"):
-                        ext = "wav"
-                    elif output_format.startswith("mp3"):
-                        ext = "mp3"
-                saved = self._output_file.build_file(default_filename=f"elevenlabs_music.{ext}").write_bytes(resp_bytes)
+                saved = self._output_file.build_file(default_filename="elevenlabs_music.mp3").write_bytes(resp_bytes)
                 audio_artifact = AudioUrlArtifact(value=saved.location, name=saved.location)
             except Exception as e_save:
                 try:
                     b64 = base64.b64encode(resp_bytes).decode("ascii")
-                    mime = "audio/wav" if output_format.startswith("pcm") else "audio/mpeg"
+                    mime = "audio/ogg" if output_format.startswith("opus") else "audio/mpeg"
                     data_url = f"data:{mime};base64,{b64}"
                     audio_artifact = AudioUrlArtifact(value=data_url, name="music")
                     self._logger.info("GenerateMusic static save failed; used data URL: %s", e_save)

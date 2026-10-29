@@ -46,6 +46,44 @@ VOICE_PRESET_MAP = {  # spellchecker:disable-line
 }
 
 
+# Raw formats carry no header, and the saved file is named from the output parameter, so their bytes
+# ended up in an .mp3 that no player can decode. They are no longer offered, and a saved workflow
+# that used one migrates to the default MP3 format.
+RAW_OUTPUT_FORMATS = [
+    "pcm_8000",
+    "pcm_16000",
+    "pcm_22050",
+    "pcm_24000",
+    "pcm_32000",
+    "pcm_44100",
+    "pcm_48000",
+    "ulaw_8000",
+    "alaw_8000",
+]
+OUTPUT_FORMAT_CHOICES = [
+    "mp3_22050_32",
+    "mp3_24000_48",
+    "mp3_44100_32",
+    "mp3_44100_64",
+    "mp3_44100_96",
+    "mp3_44100_128",
+    "mp3_44100_192",
+    "opus_48000_32",
+    "opus_48000_64",
+    "opus_48000_96",
+    "opus_48000_128",
+    "opus_48000_192",
+]
+DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
+
+
+def _migrate_raw_output_format(value: Any) -> Any:
+    """Map a retired raw output format to the default MP3 format; pass every other value through."""
+    if isinstance(value, str) and value in RAW_OUTPUT_FORMATS:
+        return DEFAULT_OUTPUT_FORMAT
+    return value
+
+
 class ElevenLabsVoiceChanger(SuccessFailureNode):
     """Transform audio from one voice to another using Eleven Labs speech-to-speech API.
 
@@ -237,44 +275,21 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
         )
 
         # Output format
-        self.add_parameter(
-            Parameter(
-                name="output_format",
-                input_types=["str"],
-                type="str",
-                default_value="mp3_44100_128",
-                tooltip="Output format of the generated audio (codec_sample_rate_bitrate)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "mp3_22050_32",
-                            "mp3_24000_48",
-                            "mp3_44100_32",
-                            "mp3_44100_64",
-                            "mp3_44100_96",
-                            "mp3_44100_128",
-                            "mp3_44100_192",
-                            "pcm_8000",
-                            "pcm_16000",
-                            "pcm_22050",
-                            "pcm_24000",
-                            "pcm_32000",
-                            "pcm_44100",
-                            "pcm_48000",
-                            "ulaw_8000",
-                            "alaw_8000",
-                            "opus_48000_32",
-                            "opus_48000_64",
-                            "opus_48000_96",
-                            "opus_48000_128",
-                            "opus_48000_192",
-                        ]
-                    )
-                },
-                ui_options={"display_name": "Output Format"},
-            )
+        output_format_param = Parameter(
+            name="output_format",
+            input_types=["str"],
+            type="str",
+            default_value=DEFAULT_OUTPUT_FORMAT,
+            tooltip="Output format of the generated audio (codec_sample_rate_bitrate)",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            traits={Options(choices=[*OUTPUT_FORMAT_CHOICES, *RAW_OUTPUT_FORMATS])},
+            ui_options={
+                "display_name": "Output Format",
+                "data": [{"name": choice} for choice in OUTPUT_FORMAT_CHOICES],
+            },
         )
+        output_format_param.add_converter(_migrate_raw_output_format)
+        self.add_parameter(output_format_param)
         self._output_file = ProjectFileParameter(
             node=self, name="output_file", default_filename="eleven_voice_changer.mp3"
         )
@@ -506,7 +521,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             raise ValueError(error_msg)
 
         model_id = self.get_parameter_value("model_id") or "eleven_multilingual_sts_v2"
-        output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
+        output_format = self.get_parameter_value("output_format") or DEFAULT_OUTPUT_FORMAT
         seed = self.get_parameter_value("seed")
         remove_background_noise = self.get_parameter_value("remove_background_noise") or False
         stability_str = self.get_parameter_value("stability")
