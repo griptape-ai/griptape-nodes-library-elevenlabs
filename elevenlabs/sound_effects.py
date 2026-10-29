@@ -253,7 +253,6 @@ class ElevenLabsSoundEffects(DataNode):
                 duration = 30.0
             kwargs["duration_seconds"] = duration
         if looping:
-            # First-attempt param name
             kwargs["loop"] = True
 
         # One call. The package requirement guarantees the signature, so a TypeError means an older package is
