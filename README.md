@@ -110,6 +110,9 @@ List voices available in your ElevenLabs account:
 
 Generate sound effects from text descriptions:
 - Text-to-sound effect generation
+- Model: `eleven_text_to_sound_v3` (the default) or `eleven_text_to_sound_v2`
+- Prompt influence from 0 to 1 (default 0.3): higher follows the prompt more closely and gives less variety
+- Optional duration and looping
 - Returns playable audio URL
 - Useful for adding audio effects to projects
 
