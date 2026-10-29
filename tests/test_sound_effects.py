@@ -107,6 +107,14 @@ def test_an_old_sdk_is_an_error_not_a_quiet_fallback_to_v2(node):
     assert FakeClient.calls == []
 
 
+def test_any_rejected_argument_is_an_error_and_not_retried_with_fewer(node):
+    node.set_parameter_value("looping", True)
+    FakeClient.reject = ("loop",)
+    with pytest.raises(RuntimeError, match="Update it"):
+        node._run()
+    assert FakeClient.calls == []
+
+
 @pytest.mark.parametrize("value", [-0.1, 1.5])
 def test_prompt_influence_must_be_between_0_and_1(node, value):
     node.set_parameter_value("prompt_influence", value)

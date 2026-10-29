@@ -258,6 +258,23 @@ wheels = [
 ]
 
 [[package]]
+name = "elevenlabs"
+version = "2.75.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c6/d4/a1266c9f4f570de9afd050d5aed4fa67be583ab856175bfc3ee2dc1773a5/elevenlabs-2.75.0.tar.gz", hash = "sha256:156358da7060abcd212d1f863137931218061209d4fc4e3be0787ed72f1dc27b", size = 889084, upload-time = "2026-10-28T09:34:05.592Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/cb/f63a2375ea0e461f665ce2d912c55a12833f5db778042ed2a562a64c20b9/elevenlabs-2.75.0-py3-none-any.whl", hash = "sha256:28c4eefc4e5e1c9766906035e54a0c84449b7c4fd3b2e5157ba704b6f22089a4", size = 2329611, upload-time = "2026-10-28T09:34:03.211Z" },
+]
+
+[[package]]
 name = "email-validator"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -274,6 +291,9 @@ wheels = [
 name = "example-nodes-template"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "elevenlabs" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -285,6 +305,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "elevenlabs", specifier = ">=2.75.0" }]
 
 [package.metadata.requires-dev]
 dev = [

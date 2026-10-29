@@ -256,29 +256,16 @@ class ElevenLabsSoundEffects(DataNode):
             # First-attempt param name
             kwargs["loop"] = True
 
-        # Try with best-known signature, then fallbacks
+        # One call. The package requirement guarantees the signature, so a TypeError means an older package is
+        # installed. Retrying with fewer arguments would quietly drop the model and run v2.
         try:
             response = client.text_to_sound_effects.convert(**kwargs)
-        except TypeError as e1:
-            if "model_id" in str(e1) or "prompt_influence" in str(e1):
-                # Falling back to fewer arguments would quietly run the default model, so say what is wrong instead.
-                msg = (
-                    "The installed elevenlabs package does not accept model_id or prompt_influence for sound effects. "
-                    "Update it (pip install --upgrade elevenlabs) and run again."
-                )
-                raise RuntimeError(msg) from e1
-            self._logger.info("SoundEffects convert signature mismatch (v1): %s; trying fallbacks…", e1)
-            # Try alternate names
-            alt_kwargs = {"text": text}
-            if use_duration and duration is not None:
-                alt_kwargs["duration"] = duration
-            if looping:
-                alt_kwargs["looping"] = True
-            try:
-                response = client.text_to_sound_effects.convert(**alt_kwargs)
-            except TypeError as e2:
-                self._logger.info("SoundEffects convert signature mismatch (v2): %s; trying minimal…", e2)
-                response = client.text_to_sound_effects.convert(text=text)
+        except TypeError as e_args:
+            msg = (
+                "The installed elevenlabs package does not accept these sound effects arguments "
+                f"({', '.join(sorted(kwargs))}). Update it (pip install --upgrade elevenlabs) and run again."
+            )
+            raise RuntimeError(msg) from e_args
         except Exception as e_call:
             self._logger.info("SoundEffects API call failed: %s", e_call)
             raise
