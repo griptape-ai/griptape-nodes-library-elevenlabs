@@ -13,7 +13,7 @@
         ],
         "dependencies": {
             "pip_dependencies": [
-                "elevenlabs"
+                "elevenlabs>=2.75.0"
             ],
             "pip_install_flags": []
         }

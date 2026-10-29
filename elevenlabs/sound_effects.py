@@ -10,6 +10,11 @@ from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
+from griptape_nodes.traits.options import Options
+
+SOUND_EFFECT_MODELS = ["eleven_text_to_sound_v3", "eleven_text_to_sound_v2"]
+DEFAULT_MODEL = SOUND_EFFECT_MODELS[0]
+DEFAULT_PROMPT_INFLUENCE = 0.3  # The API's own default.
 
 
 class ElevenLabsSoundEffects(DataNode):
@@ -17,6 +22,8 @@ class ElevenLabsSoundEffects(DataNode):
 
     Inputs:
     - text (str): Prompt describing the desired sound effect (e.g., "Cinematic Braam, Horror").
+    - model (str): `eleven_text_to_sound_v3` (the default) or `eleven_text_to_sound_v2`.
+    - prompt_influence (float): 0–1. Higher follows the prompt more closely and varies less. The API default is 0.3.
     - use_specific_duration (bool): If true, include duration_seconds in the API request (costs credits).
     - duration_seconds (float, optional): 0.1–30. Only used when use_specific_duration is true.
     - looping (bool, optional): Enable seamless looping if supported.
@@ -46,6 +53,31 @@ class ElevenLabsSoundEffects(DataNode):
                 ui_options={
                     "multiline": True,
                     "placeholder_text": "e.g., Cinematic Braam, Horror",
+                },
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                type="str",
+                default_value=DEFAULT_MODEL,
+                tooltip="The sound effects model. v3 is the newer one, and v2 is the earlier one.",
+                allowed_modes={ParameterMode.PROPERTY},
+                traits={Options(choices=SOUND_EFFECT_MODELS)},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="prompt_influence",
+                input_types=["float", "int"],
+                type="float",
+                default_value=DEFAULT_PROMPT_INFLUENCE,
+                tooltip="0 to 1. Higher follows the prompt more closely and gives less variety.",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+                ui_options={
+                    "display_name": "Prompt Influence",
+                    "slider": {"min_val": 0.0, "max_val": 1.0, "step": 0.05},
                 },
             )
         )
@@ -173,6 +205,11 @@ class ElevenLabsSoundEffects(DataNode):
         except Exception:
             duration = None
         looping: bool = bool(self.get_parameter_value("looping"))
+        model: str = self.get_parameter_value("model") or DEFAULT_MODEL
+        influence_val = self.get_parameter_value("prompt_influence")
+        prompt_influence = DEFAULT_PROMPT_INFLUENCE if influence_val is None else float(influence_val)
+        if not 0.0 <= prompt_influence <= 1.0:
+            raise ValueError("Prompt Influence must be between 0 and 1.")
 
         # Resolve API key
         api_key: str | None = getattr(self, "_resolved_api_key", None)
@@ -195,17 +232,19 @@ class ElevenLabsSoundEffects(DataNode):
 
         # Call the Text-to-Sound-Effects API
         self._logger.info(
-            "SoundEffects request: text_len=%s, use_duration=%s, duration=%s, looping=%s",
+            "SoundEffects request: model=%s, text_len=%s, use_duration=%s, duration=%s, looping=%s, prompt_influence=%s",
+            model,
             len(text),
             use_duration,
             duration,
             looping,
+            prompt_influence,
         )
         if not use_duration:
             self._logger.info("SoundEffects will NOT include duration (lower credit cost).")
 
         # Build kwargs dynamically to avoid passing None
-        kwargs: dict[str, Any] = {"text": text}
+        kwargs: dict[str, Any] = {"text": text, "model_id": model, "prompt_influence": prompt_influence}
         if use_duration and duration is not None:
             # Clamp to API range for safety
             if duration < 0.1:
@@ -221,6 +260,13 @@ class ElevenLabsSoundEffects(DataNode):
         try:
             response = client.text_to_sound_effects.convert(**kwargs)
         except TypeError as e1:
+            if "model_id" in str(e1) or "prompt_influence" in str(e1):
+                # Falling back to fewer arguments would quietly run the default model, so say what is wrong instead.
+                msg = (
+                    "The installed elevenlabs package does not accept model_id or prompt_influence for sound effects. "
+                    "Update it (pip install --upgrade elevenlabs) and run again."
+                )
+                raise RuntimeError(msg) from e1
             self._logger.info("SoundEffects convert signature mismatch (v1): %s; trying fallbacks…", e1)
             # Try alternate names
             alt_kwargs = {"text": text}
@@ -241,6 +287,8 @@ class ElevenLabsSoundEffects(DataNode):
         # Seed metadata with request info so UI always sees something useful
         metadata: dict[str, Any] = {
             "request": {
+                "model_id": model,
+                "prompt_influence": prompt_influence,
                 "text_len": len(text),
                 "use_specific_duration": use_duration,
                 "duration_seconds": duration,
