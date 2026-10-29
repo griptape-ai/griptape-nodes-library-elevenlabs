@@ -75,6 +75,15 @@
             }
         },
         {
+            "class_name": "ElevenLabsVideoToMusic",
+            "file_path": "video_to_music.py",
+            "metadata": {
+                "category": "ElevenLabs.Audio",
+                "description": "Generate background music for one or more videos using the ElevenLabs Video to Music API.",
+                "display_name": "Video to Music"
+            }
+        },
+        {
             "class_name": "ElevenLabsVoiceChanger",
             "file_path": "voice_changer.py",
             "metadata": {

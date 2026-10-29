@@ -10,6 +10,7 @@ This library provides Griptape nodes for interacting with the [ElevenLabs API](h
 - **Voice Design**: Create custom voices from descriptive prompts
 - **Sound Effects**: Generate sound effects from text descriptions
 - **Music Generation**: Generate music from text prompts
+- **Video to Music**: Generate background music for one or more videos
 - **Voice Management**: List and manage your ElevenLabs voices
 - Support for multiple models (v4, v3, multilingual, flash)
 - Voice preview functionality with automatic loading
@@ -119,6 +120,17 @@ Generate music from text prompts:
 - Models: `music_v2_5` (default, most advanced), `music_v2` and `music_v1`
 - Returns playable audio URL
 - Create background music or musical compositions
+
+### Video to Music
+
+Generate background music that fits one or more videos:
+- Up to 10 videos (200 MB and 600 seconds combined), joined in the order given
+- Optional description and style tags (such as upbeat or cinematic)
+- Model selection (`music_v2_5` by default, `music_v2`, `music_v1`)
+- Options to add detected sound-effect cues, use the video's own audio as a reference, and sign the output with C2PA
+- Optional separate tracks: the music and the sound effects come out as two audio outputs
+- Videos can be URLs, local paths or macro paths
+- Requires a paid ElevenLabs subscription
 
 ## Documentation
 
