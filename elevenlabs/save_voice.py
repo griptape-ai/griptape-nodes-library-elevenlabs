@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 from urllib.request import urlopen
 
+from elevenlabs_errors import api_key as get_api_key
+from elevenlabs_errors import raises_node_error, validate_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -26,7 +27,6 @@ class ElevenLabsSaveVoice(DataNode):
     - preview_audio (AudioUrlArtifact): Playable preview (downloaded and saved as static if possible)
     """
 
-    API_KEY_ENV_VAR: str = "ELEVEN_LABS_API_KEY"
     _logger = logging.getLogger("griptape_nodes")
 
     def __init__(self, **kwargs) -> None:
@@ -111,17 +111,13 @@ class ElevenLabsSaveVoice(DataNode):
             )
         )
 
-    def process(self) -> Any:
-        # Resolve and cache API key before scheduling background work
-        try:
-            self._resolved_api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
-        except Exception:
-            self._resolved_api_key = None  # type: ignore[attr-defined]
-        if not getattr(self, "_resolved_api_key", None):  # type: ignore[attr-defined]
-            self._resolved_api_key = os.environ.get(self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return validate_api_key()
 
+    def process(self) -> Any:
         yield lambda: self._run()
 
+    @raises_node_error
     def _run(self) -> None:
         # Collect inputs
         gen_id: str | None = self.get_parameter_value("generated_voice_id")
@@ -138,16 +134,7 @@ class ElevenLabsSaveVoice(DataNode):
             raise ValueError("voice_description must be between 20 and 1000 characters.")
 
         # Resolve API key
-        api_key: str | None = getattr(self, "_resolved_api_key", None)
-        if not api_key:
-            try:
-                api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
-            except Exception:
-                api_key = None
-        if not api_key:
-            api_key = os.environ.get(self.API_KEY_ENV_VAR)
-        if not api_key:
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+        api_key = get_api_key()
 
         # Call API
         try:

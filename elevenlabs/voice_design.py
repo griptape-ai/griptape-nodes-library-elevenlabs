@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 import unicodedata
 from typing import Any
 from uuid import uuid4
 
 import httpx
+from elevenlabs_errors import api_key as get_api_key
+from elevenlabs_errors import raises_node_error, validate_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -24,7 +25,6 @@ class ElevenLabsDesignVoice(DataNode):
     """
 
     SERVICE_NAME: str = "ElevenLabs"
-    API_KEY_ENV_VAR: str = "ELEVEN_LABS_API_KEY"
 
     # Use engine logger so messages appear in Griptape logs panel
     _logger = logging.getLogger("griptape_nodes")
@@ -234,19 +234,13 @@ class ElevenLabsDesignVoice(DataNode):
                 return uri.split(",", 1)[1]
         return None
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return validate_api_key()
+
     def process(self) -> Any:
-        # Resolve API key before scheduling to avoid context issues
-        # Try primary key from system config
-        try:
-            self._resolved_api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
-        except Exception:
-            self._resolved_api_key = None  # type: ignore[attr-defined]
-        # Env fallbacks
-        if not getattr(self, "_resolved_api_key", None):  # type: ignore[attr-defined]
-            self._resolved_api_key = os.environ.get(self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
-        # Non-blocking pattern: schedule _run
         yield lambda: self._run()
 
+    @raises_node_error
     def _run(self):
         # Local helper: coerce text to ASCII-only to satisfy strict header encoders in some envs
         def _to_ascii(s: str | None) -> str | None:
@@ -308,21 +302,7 @@ class ElevenLabsDesignVoice(DataNode):
                 self._logger.info("preview_text > 1000 chars; truncating to max allowed…")
                 preview_text = preview_text[:1000]
 
-        # Resolve API key from central config or environment (no service-specific lookups)
-        # Prefer API key resolved in process()
-        api_key: str | None = getattr(self, "_resolved_api_key", None)
-        if not api_key:
-            try:
-                api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
-            except Exception:
-                api_key = None
-        if not api_key:
-            api_key = os.environ.get(self.API_KEY_ENV_VAR)
-
-        if not api_key:
-            self.parameter_output_values["previews"] = []
-            self.parameter_output_values["preview_audios"] = []
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+        api_key = get_api_key()
 
         try:
             from elevenlabs import ElevenLabs  # Optional dep until library installs

@@ -10,14 +10,15 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from elevenlabs_errors import api_key as get_api_key
+from elevenlabs_errors import parameter_error, request_error, validate_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.files.file import File
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.options import Options
 
@@ -95,7 +96,6 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
     """
 
     SERVICE_NAME = "ElevenLabs"
-    API_KEY_NAME = "ELEVEN_LABS_API_KEY"
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -343,20 +343,13 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        """Validate that required configuration is available before running the node."""
-        errors = []
+        """A missing key is reported first and alone, since nothing can run without it."""
+        if key_errors := validate_api_key():
+            return key_errors
 
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            errors.append(
-                ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
-            )
-
-        audio_or_video = self.get_parameter_value("audio_or_video")
-        if not audio_or_video:
-            errors.append(ValueError(f"{self.name} requires an audio or video input."))
-
-        return errors or None
+        if not self.get_parameter_value("audio_or_video"):
+            return [parameter_error("'Audio or Video' is empty. Connect an audio or video input.", "Audio or Video")]
+        return None
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
@@ -376,9 +369,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Get and prepare audio input
             audio_url = await self._prepare_audio_input()
             if not audio_url:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="Failed to prepare audio input")
-                return
+                msg = "Could not find a location for the 'Audio or Video' input."
+                raise parameter_error(msg, "Audio or Video")
 
             # Get parameters
             params = self._get_parameters()
@@ -390,14 +382,10 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Submit request
             response_bytes = await self._submit_request(voice_id, audio_bytes, params)
 
-            if response_bytes:
-                self._handle_response(response_bytes)
-                self._set_status_results(
-                    was_successful=True, result_details="Voice transformation completed successfully"
-                )
-            else:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="No audio data received from API")
+            if not response_bytes:
+                raise NodeError("ElevenLabs returned no audio data.")
+            self._handle_response(response_bytes)
+            self._set_status_results(was_successful=True, result_details="Voice transformation completed successfully")
 
         except Exception as e:
             self._set_safe_defaults()
@@ -417,8 +405,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             # Extract audio from video
             video_url = self._extract_url_from_artifact(audio_or_video)
             if not video_url:
-                error_msg = f"{self.name} could not extract URL from video input"
-                raise ValueError(error_msg)
+                raise parameter_error("Could not find a location for the video in 'Audio or Video'.", "Audio or Video")
             audio_url = await self._extract_audio_from_video(video_url)
             return audio_url
 
@@ -517,8 +504,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
         if not voice_id:
-            error_msg = f"{self.name} requires a valid voice selection"
-            raise ValueError(error_msg)
+            raise parameter_error("'Voice' has no voice ID. Select a voice preset or enter a custom voice ID.", "Voice")
 
         model_id = self.get_parameter_value("model_id") or "eleven_multilingual_sts_v2"
         output_format = self.get_parameter_value("output_format") or DEFAULT_OUTPUT_FORMAT
@@ -551,8 +537,8 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                 case "Robust":
                     voice_settings["stability"] = 1.0
                 case _:
-                    msg = f"{self.name} received invalid stability value: {stability_str}. Must be one of: Creative, Natural, or Robust"
-                    raise ValueError(msg)
+                    msg = f"'Stability' is {stability_str!r}. It must be Creative, Natural or Robust."
+                    raise parameter_error(msg, "Stability")
 
         if similarity_boost is not None:
             voice_settings["similarity_boost"] = similarity_boost
@@ -561,14 +547,6 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             params["voice_settings"] = _json.dumps(voice_settings)
 
         return params
-
-    def _get_api_key(self) -> str:
-        """Get the API key - validation is done in validate_before_node_run()."""
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
-            raise RuntimeError(msg)
-        return api_key
 
     def _get_voice_id(self) -> str | None:
         """Get the current voice ID from preset or custom field."""
@@ -597,7 +575,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
             return
 
         try:
-            api_key = self._get_api_key()
+            api_key = get_api_key()
             if not api_key:
                 self._log("Cannot fetch voice preview: API key not available")
                 self.set_parameter_value("voice_preview", None, emit_change=False)
@@ -702,7 +680,7 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
 
     async def _submit_request(self, voice_id: str, audio_bytes: bytes, params: dict[str, Any]) -> bytes | None:
         """Submit request to ElevenLabs speech-to-speech API (direct API, not proxy)."""
-        api_key = self._get_api_key()
+        api_key = get_api_key()
         url = urljoin(self._api_base, f"speech-to-speech/{voice_id}")
 
         # Build query parameters
@@ -738,41 +716,11 @@ class ElevenLabsVoiceChanger(SuccessFailureNode):
                     headers=headers,
                 )
                 response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"Request failed: {e}"
-            raise RuntimeError(msg) from e
+        except httpx.HTTPError as e:
+            raise request_error(e) from e
 
         self._log("Request submitted successfully")
         return response.content
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information for the user."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "detail" in error_data:
-                detail = error_data["detail"]
-                if isinstance(detail, dict):
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-
-                    if status and message:
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-
-            if "error" in error_data:
-                return f"Error: {error_data['error']}"
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except (_json.JSONDecodeError, KeyError, TypeError):
-            return f"API Error ({status_code}): Unable to parse error response"
 
     def _handle_response(self, response_bytes: bytes) -> None:
         """Handle audio response from API (raw audio bytes)."""
