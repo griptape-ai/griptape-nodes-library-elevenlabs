@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 from collections.abc import Iterable
 from typing import Any
 
+from elevenlabs_errors import REQUEST_ERRORS, raises_node_error, validate_api_key
+from elevenlabs_errors import api_key as get_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -33,7 +34,6 @@ class ElevenLabsSoundEffects(DataNode):
     - metadata (json): Raw response metadata (optional convenience for debugging/inspection).
     """
 
-    API_KEY_ENV_VAR: str = "ELEVEN_LABS_API_KEY"
     _logger = logging.getLogger("griptape_nodes")
 
     def __init__(self, **kwargs) -> None:
@@ -143,15 +143,10 @@ class ElevenLabsSoundEffects(DataNode):
             )
         )
 
-    def process(self) -> Any:
-        # Resolve API key before scheduling work
-        try:
-            self._resolved_api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
-        except Exception:
-            self._resolved_api_key = None  # type: ignore[attr-defined]
-        if not getattr(self, "_resolved_api_key", None):  # type: ignore[attr-defined]
-            self._resolved_api_key = os.environ.get(self.API_KEY_ENV_VAR)  # type: ignore[attr-defined]
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return validate_api_key()
 
+    def process(self) -> Any:
         yield lambda: self._run()
 
     def _sniff_audio_extension(self, data: bytes) -> str:
@@ -185,6 +180,9 @@ class ElevenLabsSoundEffects(DataNode):
                     # Non-byte chunk; ignore
                     continue
             return b"".join(chunks) if chunks else None
+        except REQUEST_ERRORS:
+            # The SDK sends the request when its stream is first read, so a rejected request surfaces here.
+            raise
         except Exception as e:
             try:
                 self._logger.info("SoundEffects iterable join failed: %s", e)
@@ -192,6 +190,7 @@ class ElevenLabsSoundEffects(DataNode):
                 pass
             return None
 
+    @raises_node_error
     def _run(self) -> None:
         text: str | None = self.get_parameter_value("text")
         if not text or not isinstance(text, str) or len(text.strip()) == 0:
@@ -212,16 +211,7 @@ class ElevenLabsSoundEffects(DataNode):
             raise ValueError("Prompt Influence must be between 0 and 1.")
 
         # Resolve API key
-        api_key: str | None = getattr(self, "_resolved_api_key", None)
-        if not api_key:
-            try:
-                api_key = self.get_config_value(value=self.API_KEY_ENV_VAR)
-            except Exception:
-                api_key = None
-        if not api_key:
-            api_key = os.environ.get(self.API_KEY_ENV_VAR)
-        if not api_key:
-            raise RuntimeError("Missing ELEVEN_LABS_API_KEY. Set it in system config or environment.")
+        api_key = get_api_key()
 
         try:
             from elevenlabs import ElevenLabs  # type: ignore

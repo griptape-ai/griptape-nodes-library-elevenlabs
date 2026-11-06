@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import base64
-import json as _json
 import logging
 from typing import Any
 
 import httpx
+from elevenlabs_errors import api_key as get_api_key
+from elevenlabs_errors import raises_node_error, validate_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 # Raw formats carry no header, and the saved file is named from the output parameter, so their bytes
@@ -67,7 +67,6 @@ class ElevenLabsGenerateMusic(DataNode):
     - audio (AudioUrlArtifact): Generated music as a playable URL.
     """
 
-    API_KEY_NAME: str = "ELEVEN_LABS_API_KEY"
     _logger = logging.getLogger("griptape_nodes")
 
     PROMPT_TRUNCATE_LENGTH = 100
@@ -177,9 +176,13 @@ class ElevenLabsGenerateMusic(DataNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return validate_api_key()
+
     def process(self) -> Any:
         yield lambda: self._run()
 
+    @raises_node_error
     def _run(self) -> None:
         prompt: str | None = self.get_parameter_value("prompt")
         use_length: bool = bool(self.get_parameter_value("use_specific_length"))
@@ -191,11 +194,7 @@ class ElevenLabsGenerateMusic(DataNode):
         if prompt and len(prompt) > self.PROMPT_MAX_LENGTH:
             prompt = prompt[: self.PROMPT_MAX_LENGTH]
 
-        # Get API key using SecretsManager (same as working voice_changer node)
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            error_msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise RuntimeError(error_msg)
+        api_key = get_api_key()
 
         # Convert seconds to milliseconds (only if use_specific_length is true)
         music_length_ms: int | None = None
@@ -238,19 +237,10 @@ class ElevenLabsGenerateMusic(DataNode):
         )
 
         resp_bytes: bytes | None = None
-        try:
-            with httpx.Client(timeout=300.0) as client:
-                response = client.post(url, json=payload, headers=headers)
-                response.raise_for_status()
-                resp_bytes = response.content
-        except httpx.HTTPStatusError as e:
-            self._logger.info("GenerateMusic HTTP error: %s - %s", e.response.status_code, e.response.text)
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e_http:
-            self._logger.info("GenerateMusic HTTP failed: %s", e_http)
-            error_msg = f"Request failed: {e_http}"
-            raise RuntimeError(error_msg) from e_http
+        with httpx.Client(timeout=300.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            resp_bytes = response.content
 
         # Save to project file
         audio_artifact = None
@@ -269,72 +259,3 @@ class ElevenLabsGenerateMusic(DataNode):
                     audio_artifact = None
 
         self.parameter_output_values["audio"] = audio_artifact
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information for the user."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "detail" in error_data:
-                detail = error_data["detail"]
-                if isinstance(detail, dict):
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-
-                    if status and message:
-                        # Handle specific error cases with helpful messages
-                        if status == "limited_access" and "music-terms" in message.lower():
-                            return (
-                                f"{status}: {message}\n\n"
-                                "To use Eleven Music, you need to accept the additional terms at "
-                                "https://elevenlabs.io/music-terms. Please visit the link to accept "
-                                "the terms, then try again."
-                            )
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-                elif isinstance(detail, str):
-                    # Sometimes detail is a string
-                    if "music-terms" in detail.lower() or "limited_access" in detail.lower():
-                        return (
-                            f"Error: {detail}\n\n"
-                            "To use Eleven Music, you need to accept the additional terms at "
-                            "https://elevenlabs.io/music-terms. Please visit the link to accept "
-                            "the terms, then try again."
-                        )
-                    return f"Error: {detail}"
-
-            if "error" in error_data:
-                error_msg = error_data["error"]
-                if isinstance(error_msg, str) and (
-                    "music-terms" in error_msg.lower() or "limited_access" in error_msg.lower()
-                ):
-                    return (
-                        f"Error: {error_msg}\n\n"
-                        "To use Eleven Music, you need to accept the additional terms at "
-                        "https://elevenlabs.io/music-terms. Please visit the link to accept "
-                        "the terms, then try again."
-                    )
-                return f"Error: {error_msg}"
-
-            # Check if the raw response text contains music terms reference
-            if "music-terms" in response_text.lower() or "limited_access" in response_text.lower():
-                return (
-                    f"API Error ({status_code}): {response_text[:200]}\n\n"
-                    "To use Eleven Music, you need to accept the additional terms at "
-                    "https://elevenlabs.io/music-terms. Please visit the link to accept "
-                    "the terms, then try again."
-                )
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except (_json.JSONDecodeError, KeyError, TypeError):
-            # Even if parsing fails, check for music terms in raw text
-            if "music-terms" in response_text.lower() or "limited_access" in response_text.lower():
-                return (
-                    f"API Error ({status_code}): {response_text[:200]}\n\n"
-                    "To use Eleven Music, you need to accept the additional terms at "
-                    "https://elevenlabs.io/music-terms. Please visit the link to accept "
-                    "the terms, then try again."
-                )
-            return f"API Error ({status_code}): Unable to parse error response"

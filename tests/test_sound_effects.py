@@ -1,8 +1,6 @@
 """Checks for the Sound Effects node's request. The elevenlabs package and the project files are replaced by stubs."""
 
 import importlib.util
-import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -52,12 +50,11 @@ class FakeFile:
 def node(monkeypatch):
     FakeClient.calls = []
     FakeClient.reject = ()
-    monkeypatch.setitem(sys.modules, "elevenlabs", types.SimpleNamespace(ElevenLabs=FakeClient))
+    monkeypatch.setattr("elevenlabs.ElevenLabs", FakeClient)
     monkeypatch.setenv("ELEVEN_LABS_API_KEY", "test-key")
     module = load_node_module()
     created = module.ElevenLabsSoundEffects(name="Sound Effects")
     created._output_file = FakeFile()
-    created._resolved_api_key = "test-key"
     created.set_parameter_value("text", "a door slams")
     created.module = module
     return created

@@ -10,14 +10,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from elevenlabs_errors import api_key as get_api_key
+from elevenlabs_errors import parameter_error, raises_node_error, validate_api_key
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeError, Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.files.file import File
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.multi_options import MultiOptions
 from griptape_nodes.traits.options import Options
 
@@ -59,7 +60,6 @@ class ElevenLabsVideoToMusic(DataNode):
     - sfx_audio (AudioUrlArtifact): The sound-effects track, when separate_tracks is true.
     """
 
-    API_KEY_NAME: str = "ELEVEN_LABS_API_KEY"
     _logger = logging.getLogger("griptape_nodes")
 
     MAX_VIDEOS = 10
@@ -234,9 +234,13 @@ class ElevenLabsVideoToMusic(DataNode):
                     self.hide_parameter_by_name(name)
         return super().after_value_set(parameter, value)
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return validate_api_key()
+
     def process(self) -> Any:
         yield lambda: self._run()
 
+    @raises_node_error
     def _run(self) -> None:
         videos_input = self.get_parameter_value("videos")
         description: str | None = self.get_parameter_value("description")
@@ -248,18 +252,14 @@ class ElevenLabsVideoToMusic(DataNode):
         sign_with_c2pa = bool(self.get_parameter_value("sign_with_c2pa"))
         output_format: str = self.get_parameter_value("output_format") or "mp3_44100_128"
 
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            error_msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise RuntimeError(error_msg)
+        api_key = get_api_key()
 
         video_sources = self._collect_video_sources(videos_input)
         if not video_sources:
-            error_msg = f"{self.name}: At least one video is required."
-            raise ValueError(error_msg)
+            raise parameter_error("'Video(s)' is empty. Connect at least one video to it.", "Video(s)")
         if len(video_sources) > self.MAX_VIDEOS:
-            error_msg = f"{self.name}: At most {self.MAX_VIDEOS} videos are allowed, got {len(video_sources)}."
-            raise ValueError(error_msg)
+            msg = f"'Video(s)' has {len(video_sources)} videos. At most {self.MAX_VIDEOS} are allowed."
+            raise parameter_error(msg, "Video(s)")
 
         files = self._load_videos(video_sources)
 
@@ -294,18 +294,10 @@ class ElevenLabsVideoToMusic(DataNode):
             output_format,
         )
 
-        try:
-            with httpx.Client(timeout=600.0) as client:
-                response = client.post(url, data=data, files=files, headers=headers)
-                response.raise_for_status()
-                resp_bytes = response.content
-        except httpx.HTTPStatusError as e:
-            self._logger.info("VideoToMusic HTTP error: %s - %s", e.response.status_code, e.response.text)
-            raise RuntimeError(self._parse_error_response(e.response.text, e.response.status_code)) from e
-        except Exception as e:
-            self._logger.info("VideoToMusic HTTP failed: %s", e)
-            error_msg = f"Request failed: {e}"
-            raise RuntimeError(error_msg) from e
+        with httpx.Client(timeout=600.0) as client:
+            response = client.post(url, data=data, files=files, headers=headers)
+            response.raise_for_status()
+            resp_bytes = response.content
 
         if separate_tracks:
             music_bytes, sfx_bytes = self._split_tracks(resp_bytes)
@@ -328,13 +320,13 @@ class ElevenLabsVideoToMusic(DataNode):
         try:
             archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
         except zipfile.BadZipFile as e:
-            error_msg = f"{self.name}: Expected a ZIP of separate tracks but the response was not a ZIP."
-            raise RuntimeError(error_msg) from e
+            msg = "ElevenLabs was asked for separate tracks but did not return a ZIP."
+            raise NodeError(msg) from e
 
         members = sorted(info.filename for info in archive.infolist() if not info.is_dir())
         if not members:
-            error_msg = f"{self.name}: The separate-tracks ZIP was empty."
-            raise RuntimeError(error_msg)
+            msg = "The ZIP of separate tracks from ElevenLabs was empty."
+            raise NodeError(msg)
 
         sfx_names = [name for name in members if any(key in name.lower() for key in ("sfx", "effect"))]
         music_names = [name for name in members if name not in sfx_names]
@@ -375,12 +367,11 @@ class ElevenLabsVideoToMusic(DataNode):
             try:
                 content = File(source).read_bytes()
             except Exception as e:
-                error_msg = f"{self.name}: Could not read video {index} ({source}): {e}"
-                raise ValueError(error_msg) from e
+                msg = f"Could not read video {index} ({source}): {e}"
+                raise parameter_error(msg, "Video(s)") from e
             total_bytes += len(content)
             if total_bytes > self.MAX_TOTAL_BYTES:
-                error_msg = f"{self.name}: Videos exceed the 200 MB combined limit."
-                raise ValueError(error_msg)
+                raise parameter_error("'Video(s)' exceed the 200 MB combined limit.", "Video(s)")
             filename = self._filename_for(source, index)
             content_type = mimetypes.guess_type(filename)[0] or "video/mp4"
             files.append(("videos", (filename, content, content_type)))
@@ -420,30 +411,3 @@ class ElevenLabsVideoToMusic(DataNode):
             mime = "audio/ogg" if output_format.startswith("opus") else "audio/mpeg"
             self._logger.info("VideoToMusic file save failed; used data URL: %s", e_save)
             return AudioUrlArtifact(value=f"data:{mime};base64,{b64}", name="music")
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Extract a useful message from an API error response."""
-        if status_code == 403:
-            return (
-                "Error: Video to Music needs a paid ElevenLabs subscription. "
-                "If you have one, accept the Eleven Music terms at https://elevenlabs.io/music-terms."
-            )
-        try:
-            error_data = _json.loads(response_text)
-        except (_json.JSONDecodeError, TypeError):
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        detail = error_data.get("detail") if isinstance(error_data, dict) else None
-        if isinstance(detail, dict):
-            status = detail.get("status", "")
-            message = detail.get("message", "")
-            if status and message:
-                return f"{status}: {message}"
-            if message:
-                return f"Error: {message}"
-        elif isinstance(detail, str):
-            return f"Error: {detail}"
-        elif isinstance(detail, list) and detail:
-            messages = [str(item.get("msg", item)) if isinstance(item, dict) else str(item) for item in detail]
-            return f"Error: {'; '.join(messages)}"
-        return f"API Error ({status_code}): {response_text[:200]}"
